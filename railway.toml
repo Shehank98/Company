@@ -1,0 +1,15 @@
+# One repo, one Dockerfile, three Railway services + the Postgres plugin.
+# Create the services in the Railway UI and set each one's Start Command / Cron Schedule as below
+# (railway.toml applies to the service it is attached to; the others override the command in the UI).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+# service: api        -> start command: (default CMD)   healthcheck below
+[deploy]
+healthcheckPath = "/api/health"
+restartPolicyType = "ON_FAILURE"
+
+# service: worker     -> start command: python -m agentco.worker
+# service: scheduler  -> start command: python -m agentco.scheduler   cron schedule: */5 * * * *

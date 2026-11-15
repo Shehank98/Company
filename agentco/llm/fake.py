@@ -1,0 +1,53 @@
+"""Deterministic provider for tests and offline dev. No network."""
+from __future__ import annotations
+
+import json
+import re
+from typing import Callable
+
+from .base import LLMResult
+
+Handler = Callable[[str, str], str]   # (system, prompt) -> text
+
+_handler: Handler | None = None
+cost_per_call = 0.001
+
+
+def set_handler(h: Handler | None) -> None:
+    global _handler
+    _handler = h
+
+
+def _default(system: str, prompt: str) -> str:
+    low = prompt.lower()
+    if "intent" in system.lower():
+        m = re.search(r"\b(BOOK-\d{8}-\d{3}|ADM-\d{4}-\d{4})\b", prompt, re.I)
+        company = "adspot" if "adspot" in low else "sidadiya" if "sidadiya" in low else "all"
+        if "paid" in low or "payment received" in low:
+            kind = "money_action"
+        elif "pause" in low:
+            kind = "pause_agent"
+        elif "resume" in low:
+            kind = "resume_agent"
+        elif "approval" in low:
+            kind = "list_approvals"
+        elif "report" in low or "briefing" in low:
+            kind = "show_report"
+        elif "status" in low or "how" in low:
+            kind = "status"
+        else:
+            kind = "unknown"
+        am = re.search(r"(?:pause|resume)\s+(.+)$", prompt, re.I)
+        agent = am.group(1).strip() if am else None
+        return json.dumps({"kind": kind, "company": company, "agent": agent,
+                           "booking_ref": m.group(1) if m else None})
+    return "Daily report (fake model). " + prompt[:400]
+
+
+class FakeProvider:
+    name = "fake"
+
+    def complete(self, *, system: str, prompt: str, tier: str, json_mode: bool) -> LLMResult:
+        text = (_handler or _default)(system, prompt)
+        tin, tout = max(1, len(prompt) // 4), max(1, len(text) // 4)
+        return LLMResult(text, self.name, f"fake-{tier}", "direct", tin, tout, cost_per_call)

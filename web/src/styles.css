@@ -1,0 +1,33 @@
+:root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --text:#e2e8f0; --mute:#94a3b8; --acc:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+* { box-sizing: border-box; } html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+.app { display: flex; flex-direction: column; height: 100%; max-width: 720px; margin: 0 auto; }
+header { display: flex; gap: 8px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; border-bottom: 1px solid var(--line); }
+.seg { display: flex; flex: 1; background: var(--panel); border-radius: 10px; padding: 3px; }
+.seg button { flex: 1; background: none; border: 0; color: var(--mute); padding: 8px; border-radius: 8px; font-size: 14px; }
+.seg button.on { background: var(--acc); color: #04293a; font-weight: 600; }
+main { flex: 1; overflow-y: auto; padding: 12px; }
+nav { display: flex; border-top: 1px solid var(--line); background: var(--panel); padding-bottom: env(safe-area-inset-bottom); }
+nav button { flex: 1; background: none; border: 0; color: var(--mute); padding: 8px 0 6px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; }
+nav button.on { color: var(--acc); } nav span { font-size: 20px; position: relative; } nav small { font-size: 11px; }
+.dot { position: absolute; top: -4px; right: -10px; background: var(--bad); color: #fff; border-radius: 9px; font: 600 10px/16px system-ui; min-width: 16px; text-align: center; font-style: normal; }
+button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; min-height: 44px; }
+button.primary { background: var(--acc); color: #04293a; border-color: var(--acc); font-weight: 600; } button.danger { color: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: .45; } .icon { min-width: 44px; padding: 8px; background: none; border: 0; font-size: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+input, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-height: 44px; }
+.chat { display: flex; flex-direction: column; height: 100%; } .msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.msg { display: flex; flex-direction: column; max-width: 88%; } .msg.owner { align-self: flex-end; align-items: flex-end; }
+.bubble { background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
+.msg.owner .bubble { background: #0c4a6e; border-color: #075985; } .msg.system .bubble { border-style: dashed; }
+.msg small, small { color: var(--mute); font-size: 12px; }
+.composer { display: flex; gap: 6px; align-items: center; padding-top: 10px; } .composer input { flex: 1; }
+.list { display: flex; flex-direction: column; gap: 10px; } .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.card.slim { padding: 8px 12px; gap: 2px; } .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .row .primary { flex: 1; }
+.badge { background: var(--bg); border: 1px solid var(--line); color: var(--mute); border-radius: 8px; padding: 1px 8px; font-size: 12px; }
+.badge.active, .badge.done { color: var(--ok); } .badge.paused, .badge.warn, .badge.todo { color: var(--warn); } .badge.budget_exhausted, .badge.failed { color: var(--bad); }
+.bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; } .bar div { height: 100%; background: var(--acc); } .bar .hot { background: var(--bad); }
+.payload { margin: 0; background: var(--bg); border-radius: 8px; padding: 8px; font-size: 12px; overflow-x: auto; color: var(--mute); }
+.confirm { margin: 0; padding: 8px; border: 1px solid var(--warn); border-radius: 8px; }
+.hint { color: var(--mute); } .err { color: var(--bad); }
+.login { max-width: 360px; margin: 0 auto; padding: 18vh 20px 0; text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.login form { display: flex; flex-direction: column; gap: 10px; width: 100%; } code { word-break: break-all; color: var(--acc); }
