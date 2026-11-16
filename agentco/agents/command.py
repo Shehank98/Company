@@ -13,14 +13,14 @@ from . import budget
 
 INTENT_SYSTEM = (
     "You convert an owner's chat message into an intent. Return JSON only with keys: "
-    "kind (status|show_report|list_approvals|pause_agent|resume_agent|money_action|unknown), "
+    "kind (status|show_report|list_approvals|pause_agent|resume_agent|create_post|create_ad|money_action|unknown), "
     "company (adspot|sidadiya|all|null), agent (agent name or null), booking_ref (e.g. BOOK-20260101-123 "
-    "or ADM-2026-1234, or null), amount (number or null). Use money_action for anything about marking "
+    "or ADM-2026-1234, or null), amount (number or null), topic (what the post/ad is about, or null). Use create_post to draft a social post and create_ad to draft an Ads Manager setup sheet. Use money_action for anything about marking "
     "paid, payments, payouts, sending mail or posting. Never invent values."
 )
 
-HELP = ("I can: show status, show today's report, list approvals, pause/resume an agent. "
-        "Try: \"status\", \"show the AdSpot report\", \"approvals\", \"pause AdSpot Ops\".")
+HELP = ("I can: show status, show today's report, list approvals, pause/resume an agent, and draft posts/ads. "
+        "Try: \"status\", \"approvals\", \"pause AdSpot Ops\", \"post for AdSpot about booking classified ads online\".")
 
 
 def _companies(choice: str) -> list[dict]:
@@ -55,6 +55,18 @@ def handle(text: str, scope_choice: str) -> str:
     if intent.kind == "money_action":
         return ("That would move money or send mail to a customer. Phase 1 cannot do that. "
                 "Nothing was changed. (The booking/amount confirm card arrives in Phase 2.)")
+    if intent.kind in ("create_post", "create_ad"):
+        from .. import content
+        if intent.company not in ("adspot", "sidadiya") and scope_choice not in ("adspot", "sidadiya"):
+            return "Which company is this for, AdSpot or Sidadiya?"
+        slug = intent.company if intent.company in ("adspot", "sidadiya") else scope_choice
+        if not intent.topic:
+            return "What should it be about? e.g. \"post for AdSpot about booking classified ads online\"."
+        try:
+            pid = content.request_pack(slug, "post" if intent.kind == "create_post" else "ad", intent.topic)
+        except (ValueError, LookupError) as e:
+            return f"I can't draft that: {e}"
+        return f"Drafting {'post' if intent.kind == 'create_post' else 'ad'} #{pid} for {slug.title()}. It will appear in the Posts tab in a minute. Nothing is published anywhere."
     if intent.kind == "status":
         lines = []
         for co in cos:

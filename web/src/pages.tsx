@@ -170,3 +170,130 @@ export function Costs({ scope }: { scope: Scope }) {
     </div>
   );
 }
+
+// ---------------- Posts (manual publish) ----------------
+function CopyBtn({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button className="small" onClick={async () => { try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); } catch (_) { prompt("Copy this:", text); } }}>
+      {done ? "Copied ✓" : label}
+    </button>
+  );
+}
+
+const PLATFORMS: [string, string][] = [["facebook", "Facebook"], ["instagram", "Instagram"], ["x", "X"], ["linkedin", "LinkedIn"]];
+
+function Pack({ p, reload }: { p: any; reload: () => void }) {
+  const [err, setErr] = useState("");
+  const move = async (status: string) => { try { await api(`/api/content/${p.company}/${p.id}/status`, { body: { status } }); reload(); } catch (e: any) { setErr(e.message); } };
+  async function upload(f?: File) {
+    if (!f) return;
+    const form = new FormData(); form.append("file", f);
+    try { await api(`/api/content/${p.company}/${p.id}/image`, { form }); reload(); } catch (e: any) { setErr(e.message); }
+  }
+  const issues: string[] = p.claims_check?.issues ?? [];
+  const tags = (p.hashtags ?? []).join(" ");
+  return (
+    <div className="card">
+      <div className="row"><span className="badge">{p.company}</span><span className="badge">{p.kind}</span>
+        <span className={`badge ${p.status}`}>{p.status.replace("_", " ")}</span><small>#{p.id}</small></div>
+      <b>{p.topic}</b>
+      {p.status === "drafting" && <small>Drafting… this usually takes under a minute.</small>}
+      {p.status === "failed" && <p className="err">Failed: {p.error}</p>}
+      {issues.length > 0 && <div className="confirm"><b>Check before posting:</b><ul>{issues.map((i, k) => <li key={k}>{i}</li>)}</ul></div>}
+      {PLATFORMS.map(([k, label]) => p.copy?.[k] ? (
+        <div className="block" key={k}><div className="row"><b>{label}</b><CopyBtn text={p.copy[k]} /></div><div className="text">{p.copy[k]}</div></div>
+      ) : null)}
+      {tags && <div className="block"><div className="row"><b>Hashtags</b><CopyBtn text={tags} /></div><div className="text">{tags}</div></div>}
+      {p.status !== "drafting" && p.status !== "failed" && (
+        <div className="block">
+          <b>Image</b>
+          {p.image_file ? (
+            <><img className="pic" src={`/api/content/${p.company}/${p.id}/image?v=${p.updated_at}`} alt="draft" />
+              <a className="btnlink" href={`/api/content/${p.company}/${p.id}/image`} download>Download image</a></>
+          ) : <small>No image yet. Make it in Google Flow with the prompt below, then upload it here.</small>}
+          {p.image_brief && <div className="text"><small>Brief:</small> {p.image_brief}</div>}
+          {p.image_prompt && <div className="row"><div className="text grow"><small>Prompt:</small> {p.image_prompt}</div><CopyBtn text={p.image_prompt} /></div>}
+          {p.aspect_ratios?.facebook && <small>Sizes: Facebook {p.aspect_ratios.facebook}, Instagram {p.aspect_ratios.instagram}</small>}
+          <label className="btnlink">Upload image<input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => upload(e.target.files?.[0])} /></label>
+        </div>
+      )}
+      {p.ad_setup && (
+        <div className="block"><div className="row"><b>Ads Manager setup sheet</b>
+          <CopyBtn label="Copy all" text={Object.entries(p.ad_setup).filter(([, v]) => v).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join("\n")} /></div>
+          {Object.entries(p.ad_setup).filter(([, v]) => v).map(([k, v]) => <div className="kv" key={k}><small>{k.replace(/_/g, " ")}</small><div>{String(v)}</div></div>)}
+          <small>Type these into Ads Manager yourself. Check the budget and audience before you publish.</small>
+        </div>
+      )}
+      {err && <p className="err">{err}</p>}
+      <div className="row">
+        {(p.status === "draft" || p.status === "needs_review") && <button className="primary" onClick={() => move("approved")}>Approve</button>}
+        {p.status === "approved" && <button className="primary" onClick={() => move("posted")}>I posted it</button>}
+        {["draft", "needs_review", "approved", "failed"].includes(p.status) && <button className="danger" onClick={() => move("rejected")}>Reject</button>}
+      </div>
+    </div>
+  );
+}
+
+function Facts({ scope }: { scope: Scope }) {
+  const { data, reload } = useLoad<any[]>(`/api/facts?scope=${scope}`, [scope]);
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [nk, setNk] = useState(""); const [nv, setNv] = useState(""); const [nc, setNc] = useState("adspot");
+  const [err, setErr] = useState("");
+  async function save(company: string, key: string, value: string) {
+    try { await api(`/api/facts/${company}`, { method: "PUT", body: { key, value } }); setErr(""); reload(); setEdit({}); } catch (e: any) { setErr(e.message); }
+  }
+  return (
+    <div className="card">
+      <button onClick={() => setOpen(!open)}>{open ? "Hide" : "Edit"} brand facts (the only facts the writer may use)</button>
+      {open && <>
+        <small>Public facts only. Add offers or prices here if you want them used; nothing else is ever invented.</small>
+        {data?.map((f) => { const id = `${f.company}:${f.key}`; return (
+          <div className="kv" key={id}><small>{f.company} · {f.key}</small>
+            <textarea rows={2} value={edit[id] ?? f.value} onChange={(e) => setEdit({ ...edit, [id]: e.target.value })} />
+            {edit[id] !== undefined && <button className="small primary" onClick={() => save(f.company, f.key, edit[id])}>Save</button>}
+          </div>); })}
+        <div className="kv"><small>Add a fact</small>
+          <select value={nc} onChange={(e) => setNc(e.target.value)}><option value="adspot">AdSpot</option><option value="sidadiya">Sidadiya</option></select>
+          <input placeholder="key (e.g. offer)" value={nk} onChange={(e) => setNk(e.target.value.toLowerCase())} />
+          <textarea rows={2} placeholder="fact" value={nv} onChange={(e) => setNv(e.target.value)} />
+          <button className="small" onClick={() => { save(nc, nk, nv); setNk(""); setNv(""); }}>Add</button></div>
+        {err && <p className="err">{err}</p>}
+      </>}
+    </div>
+  );
+}
+
+export function Posts({ scope }: { scope: Scope }) {
+  const { data, err, reload } = useLoad<any[]>(`/api/content?scope=${scope}`, [scope], 4000);
+  const [company, setCompany] = useState<string>(scope === "all" ? "adspot" : scope);
+  const [kind, setKind] = useState("post");
+  const [mode, setMode] = useState("flow_manual");
+  const [topic, setTopic] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { if (scope !== "all") setCompany(scope); }, [scope]);
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setMsg("");
+    try { await api("/api/content", { body: { company, kind, topic, image_mode: mode } }); setTopic(""); reload(); } catch (e: any) { setMsg(e.message); }
+  }
+  return (
+    <div className="list">
+      <form className="card" onSubmit={create}>
+        <b>New draft</b>
+        <div className="row">
+          {scope === "all" && <select value={company} onChange={(e) => setCompany(e.target.value)}><option value="adspot">AdSpot</option><option value="sidadiya">Sidadiya</option></select>}
+          <select value={kind} onChange={(e) => setKind(e.target.value)}><option value="post">Post</option><option value="ad">Ad (Ads Manager sheet)</option></select>
+          <select value={mode} onChange={(e) => setMode(e.target.value)}><option value="flow_manual">Image: Google Flow (manual)</option><option value="gemini_image">Image: Gemini (auto)</option></select>
+        </div>
+        <input placeholder="What is it about? e.g. booking classified ads online" value={topic} onChange={(e) => setTopic(e.target.value)} />
+        <button className="primary" disabled={topic.trim().length < 3}>Draft it</button>
+        {msg && <p className="err">{msg}</p>}
+        <small>Nothing is published by AgentCo. You copy the text and image into Facebook yourself.</small>
+      </form>
+      {err && <p className="err">{err}</p>}
+      {data?.map((p) => <Pack key={`${p.company}-${p.id}`} p={p} reload={reload} />)}
+      <Facts scope={scope} />
+    </div>
+  );
+}

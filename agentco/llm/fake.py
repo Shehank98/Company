@@ -20,9 +20,26 @@ def set_handler(h: Handler | None) -> None:
 
 def _default(system: str, prompt: str) -> str:
     low = prompt.lower()
+    if "claims checker" in system.lower():
+        return json.dumps({"ok": True, "issues": []})
+    if "copywriter" in system.lower():
+        topic = re.search(r"topic: (.+)", prompt).group(1)
+        ad = "kind: ad" in prompt
+        return json.dumps({
+            "facebook": f"Fake Facebook post about {topic}", "instagram": f"Fake Instagram caption about {topic}",
+            "x": f"Fake X post about {topic}", "linkedin": f"Fake LinkedIn post about {topic}",
+            "hashtags": ["#SriLanka"], "image_brief": "A friendly flat illustration.",
+            "image_prompt": f"Flat illustration about {topic}, no text",
+            "ad_setup": {"objective": "Traffic", "audience": "Sri Lanka, 25-54", "headline": "Book online",
+                         "primary_text": topic, "call_to_action": "Learn more", "destination_url": "https://example.com"} if ad else None})
     if "intent" in system.lower():
         m = re.search(r"\b(BOOK-\d{8}-\d{3}|ADM-\d{4}-\d{4})\b", prompt, re.I)
         company = "adspot" if "adspot" in low else "sidadiya" if "sidadiya" in low else "all"
+        tm = re.search(r"\b(?:about|on)\s+(.+)$", prompt, re.I)
+        if ("post" in low or "ad " in low or low.startswith("ad")) and "paid" not in low and "approval" not in low:
+            kind = "create_ad" if re.search(r"\bad\b", low) and "post" not in low else "create_post"
+            return json.dumps({"kind": kind, "company": "adspot" if "adspot" in low else "sidadiya" if "sidadiya" in low else None,
+                               "topic": tm.group(1).strip() if tm else None})
         if "paid" in low or "payment received" in low:
             kind = "money_action"
         elif "pause" in low:

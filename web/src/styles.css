@@ -31,3 +31,13 @@ input, textarea { font: inherit; color: var(--text); background: var(--panel); b
 .hint { color: var(--mute); } .err { color: var(--bad); }
 .login { max-width: 360px; margin: 0 auto; padding: 18vh 20px 0; text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .login form { display: flex; flex-direction: column; gap: 10px; width: 100%; } code { word-break: break-all; color: var(--acc); }
+
+select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 44px; }
+button.small { min-height: 34px; padding: 4px 10px; font-size: 13px; } .grow { flex: 1; }
+.block { border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.block .row { justify-content: space-between; } .text { white-space: pre-wrap; word-break: break-word; }
+.pic { max-width: 100%; border-radius: 10px; } .kv { display: flex; flex-direction: column; gap: 4px; } .kv small { text-transform: capitalize; }
+.btnlink { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel); text-decoration: none; cursor: pointer; align-self: flex-start; }
+.badge.draft, .badge.approved, .badge.posted { color: var(--ok); } .badge.needs_review, .badge.drafting { color: var(--warn); } .badge.rejected { color: var(--bad); }
+.confirm ul { margin: 4px 0 0; padding-left: 18px; }
+nav small { font-size: 10px; }

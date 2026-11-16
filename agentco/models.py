@@ -55,8 +55,8 @@ class ReceiptReceived(_Ev):            # Phase 2
     booking_ref: str
 
 
-class PostApproved(_Ev):               # Phase 3
-    post_id: str
+class ContentDrafted(_Ev):
+    pack_id: int
 
 
 EVENT_TYPES: dict[str, type[_Ev]] = {
@@ -66,7 +66,7 @@ EVENT_TYPES: dict[str, type[_Ev]] = {
     "payment.received": PaymentReceived,
     "booking.ready_for_publication": BookingReadyForPublication,
     "receipt.received": ReceiptReceived,
-    "post.approved": PostApproved,
+    "content.drafted": ContentDrafted,
 }
 
 
@@ -74,12 +74,13 @@ EVENT_TYPES: dict[str, type[_Ev]] = {
 class Intent(BaseModel):
     kind: Literal[
         "status", "show_report", "list_approvals", "pause_agent", "resume_agent",
-        "money_action", "unknown",
+        "money_action", "create_post", "create_ad", "unknown",
     ] = "unknown"
     company: Literal["adspot", "sidadiya", "all"] | None = None
     agent: str | None = Field(default=None, max_length=80)
     booking_ref: str | None = Field(default=None, max_length=60)
     amount: float | None = None
+    topic: str | None = Field(default=None, max_length=300)
 
 
 class Step(BaseModel):

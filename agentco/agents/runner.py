@@ -32,6 +32,11 @@ def _daily(scope: CompanyScope, agent: dict, run_id: int) -> str:
     return out.final
 
 
+def db_company_name(company_id: int) -> str:
+    with db.admin() as a:
+        return a.execute("SELECT name FROM companies WHERE id=%s", (company_id,)).fetchone()["name"]
+
+
 def run_job(job: dict) -> str:
     """Returns 'done' | 'skipped' | 'budget_stopped' | 'failed:<reason>'. Never raises on policy outcomes."""
     with db.admin() as a:
@@ -52,6 +57,10 @@ def run_job(job: dict) -> str:
             scope.update_task(task_id, "running")
             if agent["role"] in ROLE_TOOL:
                 message = _daily(scope, agent, run_id)
+            elif agent["role"] == "marketing" and job["kind"] == "content_pack":
+                from .. import content
+                co_name = db_company_name(job["company_id"])
+                message = content.build(scope, agent, run_id, int(job["payload"]["pack_id"]), co_name)
             else:
                 raise RuntimeError(f"role {agent['role']!r} has no scheduled behaviour")
             scope.finish_run(run_id, "done")
@@ -63,9 +72,12 @@ def run_job(job: dict) -> str:
         except Exception as e:  # keep failure info committed
             scope.finish_run(run_id, "failed", f"{type(e).__name__}: {e}"[:500])
             scope.update_task(task_id, "failed")
+            if job["kind"] == "content_pack":
+                scope.update_pack(int(job["payload"]["pack_id"]), status="failed", error=f"{type(e).__name__}: {e}"[:300])
             outcome, message = f"failed:{type(e).__name__}", f"{agent['name']} failed: {e}"[:500]
     if message:
         post_message(co["slug"], "system", message)
         if outcome == "done":
-            send_push(f"{co['slug'].title()} report ready", message[:140])
+            send_push(f"{co['slug'].title()}: draft ready" if job["kind"] == "content_pack"
+                      else f"{co['slug'].title()} report ready", message[:140])
     return outcome

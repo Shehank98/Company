@@ -80,11 +80,11 @@ def test_approval_flow_and_double_decision(client):
 
 def test_edit_keeps_approval_pending(client):
     login(client)
-    mk = agent("sidadiya", "Marketing")
-    with company_scope("sidadiya") as s:
-        ap = registry.call(s, mk, None, "publish_post", {"post_id": "p1"})["approval_id"]
-    assert client.post(f"/api/approvals/sidadiya/{ap}", json={"decision": "edit", "summary": "Reworded"}).status_code == 200
-    got = client.get("/api/approvals?scope=sidadiya").json()
+    ops = agent("adspot", "AdSpot Ops")
+    with company_scope("adspot") as s:
+        ap = registry.call(s, ops, None, "send_publication_mail", {"booking_ref": "B2"})["approval_id"]
+    assert client.post(f"/api/approvals/adspot/{ap}", json={"decision": "edit", "summary": "Reworded"}).status_code == 200
+    got = client.get("/api/approvals?scope=adspot").json()
     assert got[0]["summary"] == "Reworded" and got[0]["status"] == "pending"
 
 

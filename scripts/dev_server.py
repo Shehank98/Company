@@ -8,7 +8,7 @@ os.environ.update({
     "DATABASE_URL": "postgresql://agentco:agentco@localhost:5432/agentco_dev",
     "ADSPOT_RO_DATABASE_URL": "postgresql://agentco:agentco@localhost:5432/fake_adspot",
     "SIDADIYA_RO_DATABASE_URL": "postgresql://agentco:agentco@localhost:5432/fake_sidadiya",
-    "LLM_PROVIDER": "fake", "COOKIE_SECURE": "false", "OWNER_EMAIL": "owner@example.com",
+    "LLM_PROVIDER": "fake", "UPLOAD_DIR": "/tmp/agentco-dev-uploads", "COOKIE_SECURE": "false", "OWNER_EMAIL": "owner@example.com",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -31,5 +31,8 @@ while worker.work_once():
 with company_scope("adspot") as s:
     ops = next(a for a in s.list_agents() if a["name"] == "AdSpot Ops")
     registry.call(s, ops, None, "send_publication_mail", {"booking_ref": "BOOK-20260101-002"})
+import threading
+import time
+threading.Thread(target=lambda: [(worker.work_once() or time.sleep(1)) for _ in iter(int, 1)], daemon=True).start()
 app.dependency_overrides[auth.require_owner] = lambda: "owner@example.com"
 uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

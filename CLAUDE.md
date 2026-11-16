@@ -11,7 +11,8 @@ Multi-company agent platform for AdSpot Media and Sidadiya. Python 3.12 + FastAP
 5. **LLM calls only via `llm.complete()`** with a `DataClass`. INTERNAL/CONFIDENTIAL = paid Gemini only. Model ids/prices come from env.
 6. **No bank/gateway credentials, no money movement.** Payout stays manual.
 7. Connectors are read-only: fixed, parametrised SQL; SELECT-only role; read-only transaction. Writes to AdSpot/Sidadiya (Phase 2) go through a narrow audited service only.
-8. Migrations are append-only files in `migrations/` (`NNN_name.sql`); never edit an applied one.
+8. **Marketing never publishes.** Content is manual-publish: the `marketing` department has only `save_note` and `save_content_pack` (DRAFT, may only set draft/needs_review/failed). No Postiz, no Meta API. Public text and image prompts must pass `security/public_guard.py`; marketing copy is PUBLIC-class and may use only `public_facts` + the topic.
+9. Migrations are append-only files in `migrations/` (`NNN_name.sql`); never edit an applied one.
 
 ## Style
 - Minimal code. Mark deliberate shortcuts with a `ponytail:` comment (what was skipped and when to revisit).

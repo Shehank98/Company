@@ -86,24 +86,30 @@ def chat(body: ChatIn):
 _MAGIC = {".pdf": b"%PDF", ".png": b"\x89PNG", ".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".webp": b"RIFF"}
 
 
-@app.post("/api/chat/upload", dependencies=[*api, Depends(limit("upload", 10, 60))])
-def chat_upload(file: UploadFile = File(...), scope: str = Form("all")):
-    """Stores an owner upload (receipt, camera photo). Contents are UNTRUSTED and not read by any model in Phase 1."""
+def _store_upload(file: UploadFile, subdir: str = "", allowed: tuple[str, ...] = tuple(_MAGIC)) -> tuple[str, str, int]:
+    """Validate type, magic bytes and size, then store under a random name. Returns (stored, safe_name, size)."""
     s = get_settings()
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in _MAGIC:
-        raise HTTPException(415, "Only PDF, PNG, JPG or WEBP files")
+    if ext not in allowed:
+        raise HTTPException(415, "Unsupported file type")
     data = file.file.read(s.max_upload_mb * 1024 * 1024 + 1)
     if len(data) > s.max_upload_mb * 1024 * 1024:
         raise HTTPException(413, f"File larger than {s.max_upload_mb} MB")
     if not data.startswith(_MAGIC[ext]):
         raise HTTPException(415, "File content does not match its type")
-    folder = Path(s.upload_dir)
+    folder = Path(s.upload_dir) / subdir
     folder.mkdir(parents=True, exist_ok=True)
     stored = f"{uuid.uuid4().hex}{ext}"
     (folder / stored).write_bytes(data)
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", file.filename or "file")[:80]
-    post_message(scope, "owner", f"Uploaded {safe}", {"stored_as": stored, "name": safe, "size": len(data)})
+    return stored, re.sub(r"[^A-Za-z0-9._-]", "_", file.filename or "file")[:80], len(data)
+
+
+@app.post("/api/chat/upload", dependencies=[*api, Depends(limit("upload", 10, 60))])
+def chat_upload(file: UploadFile = File(...), scope: str = Form("all")):
+    """Stores an owner upload (receipt, camera photo). Contents are UNTRUSTED and not read by any model in Phase 1."""
+    stored, safe, size = _store_upload(file)
+    data = {"size": size}
+    post_message(scope, "owner", f"Uploaded {safe}", {"stored_as": stored, "name": safe, "size": size})
     reply = "Saved. Phase 2 will let me link receipts to a booking; nothing was sent or changed."
     post_message(scope, "command", reply)
     return {"stored_as": stored, "reply": reply}
@@ -214,6 +220,93 @@ def push_subscribe(sub: PushSub):
         a.execute("INSERT INTO push_subscriptions (endpoint, p256dh, auth) VALUES (%s,%s,%s) "
                   "ON CONFLICT (endpoint) DO UPDATE SET p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth",
                   (sub.endpoint, sub.keys.get("p256dh", ""), sub.keys.get("auth", "")))
+    return {"ok": True}
+
+
+# ---------------- content packs (manual publish) ----------------
+class PackIn(BaseModel):
+    company: str = Field(pattern="^(adspot|sidadiya)$")
+    kind: str = Field(pattern="^(post|ad)$")
+    topic: str = Field(min_length=3, max_length=300)
+    image_mode: str = Field(default="flow_manual", pattern="^(flow_manual|gemini_image)$")
+
+
+@app.get("/api/content", dependencies=api)
+def content_list(scope: str = "all"):
+    return _each(scope, lambda s: s.list_packs())
+
+
+@app.post("/api/content", dependencies=[*api, Depends(limit("content", 10, 60))])
+def content_create(body: PackIn):
+    from .. import content
+    try:
+        return {"id": content.request_pack(body.company, body.kind, body.topic, body.image_mode)}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except LookupError as e:
+        raise HTTPException(409, str(e))
+
+
+_PACK_MOVES = {"approved": ("draft", "needs_review"), "rejected": ("draft", "needs_review", "approved", "failed"),
+               "posted": ("approved",)}
+
+
+class PackStatus(BaseModel):
+    status: str = Field(pattern="^(approved|rejected|posted)$")
+
+
+@app.post("/api/content/{slug}/{pack_id}/status", dependencies=api)
+def content_status(slug: str, pack_id: int, body: PackStatus):
+    (co,) = _companies(slug)
+    with scope_by_id(co["id"], co["slug"]) as s:
+        if not s.move_pack(pack_id, body.status, _PACK_MOVES[body.status]):
+            raise HTTPException(409, "That change is not allowed from the pack's current status")
+    return {"ok": True}
+
+
+@app.post("/api/content/{slug}/{pack_id}/image", dependencies=[*api, Depends(limit("upload", 10, 60))])
+def content_image_upload(slug: str, pack_id: int, file: UploadFile = File(...)):
+    """For flow_manual: attach the image you made in Google Flow."""
+    (co,) = _companies(slug)
+    stored, _, _ = _store_upload(file, "content", (".png", ".jpg", ".jpeg", ".webp"))
+    with scope_by_id(co["id"], co["slug"]) as s:
+        if s.get_pack(pack_id) is None:
+            raise HTTPException(404, "No such pack")
+        s.update_pack(pack_id, image_file=stored)
+    return {"ok": True}
+
+
+@app.get("/api/content/{slug}/{pack_id}/image", dependencies=api)
+def content_image(slug: str, pack_id: int):
+    (co,) = _companies(slug)
+    with scope_by_id(co["id"], co["slug"]) as s:
+        pack = s.get_pack(pack_id)
+    if not pack or not pack["image_file"]:
+        raise HTTPException(404, "No image")
+    f = Path(get_settings().upload_dir) / "content" / Path(pack["image_file"]).name
+    if not f.is_file():
+        raise HTTPException(404, "Image file missing")
+    return FileResponse(f, headers={"Content-Disposition": f'attachment; filename="{slug}-{pack_id}{f.suffix}"'})
+
+
+class FactIn(BaseModel):
+    key: str = Field(pattern="^[a-z0-9_]{2,40}$")
+    value: str = Field(min_length=1, max_length=500)
+
+
+@app.get("/api/facts", dependencies=api)
+def facts(scope: str = "all"):
+    return _each(scope, lambda s: s.list_facts())
+
+
+@app.put("/api/facts/{slug}", dependencies=api)
+def fact_put(slug: str, body: FactIn):
+    from ..security.public_guard import problems
+    if problems(body.value):
+        raise HTTPException(422, "Facts are public: no emails, phone numbers or booking references")
+    (co,) = _companies(slug)
+    with scope_by_id(co["id"], co["slug"]) as s:
+        s.upsert_fact(body.key, body.value)
     return {"ok": True}
 
 

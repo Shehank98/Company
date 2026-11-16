@@ -50,8 +50,16 @@ ALTER ROLE agentco_ro SET default_transaction_read_only = on;
 5. Google sign-in: create an OAuth Web client, add your Railway URL as an authorised JavaScript origin, set `GOOGLE_CLIENT_ID` and `OWNER_EMAIL`. First login shows a TOTP secret to add to your authenticator app.
 6. Push: generate VAPID keys and set the three `VAPID_*` vars.
 
+## Posts and ads (manual publish, no Facebook connection)
+The **Posts** tab (or chat: "make a post for AdSpot about booking classified ads online") makes the Marketing agent write a ready-to-post package: copy for Facebook, Instagram, X and LinkedIn, hashtags, an image brief with an exact prompt, and recommended sizes. Choose **Ad** to also get a setup sheet (objective, audience, placements, headline, text, call to action) to type into Ads Manager yourself.
+* Copy buttons for every block. Image: either make it in Google Flow from the prompt and upload it, or pick "Gemini (auto)" (needs `GEMINI_IMAGE_MODEL`).
+* A second model pass checks the draft against your **brand facts** and flags unsupported claims ("needs review"). Edit the facts at the bottom of the Posts tab. Seeded facts are generic: no prices or discounts are used unless you add them.
+* Customer data can never enter public content: emails, phone numbers and booking references are blocked in topics, facts and prompts, and flagged if a model leaks one.
+* AgentCo never posts anywhere and never touches Meta. You post by hand, then tap "I posted it".
+
 ## Phases
-1. Core + chat + approvals + daily reports (done here).
+1. Core + chat + approvals + daily reports (done).
+1b. Manual-publish Posts and ad sheets (done). Postiz and Meta API are dropped.
 2. Gmail, Customer Desk, payment flow, publication draft, receipt flow, booking state machine, payout batch (prepare only).
-3. Postiz, Marketing agents, image providers, LLM router with OmniRoute + cost metrics, Sidadiya slip checker.
+3. Sidadiya slip checker, optional OmniRoute for PUBLIC copy with cost comparison.
 4. Engineering agent (PRs), weekly Insights report.

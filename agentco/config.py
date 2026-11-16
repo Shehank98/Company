@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     gemini_price_flash_out: float = 2.50
     gemini_price_pro_in: float = 1.25
     gemini_price_pro_out: float = 10.0
+    gemini_image_model: str = ""            # e.g. the Nano Banana model id; empty => flow_manual only
+    gemini_image_price_usd: float = 0.04    # per image - VERIFY against current pricing
     omniroute_enabled: bool = False         # Phase 3; PUBLIC-class tasks only
 
     # Owner auth

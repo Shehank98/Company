@@ -170,6 +170,50 @@ class CompanyScope:
             "WHERE c.company_id=%s AND c.created_at >= date_trunc('month', now()) "
             "GROUP BY 1,2,3,4 ORDER BY cost_usd DESC", (self.company_id,)).fetchall()
 
+    # ---- content packs (manual-publish) ----
+    _PACK_COLS = {"status", "copy", "hashtags", "image_brief", "image_prompt", "aspect_ratios",
+                  "image_file", "ad_setup", "claims_check", "error", "image_mode", "run_id"}
+
+    def create_pack(self, *, kind: str, topic: str, image_mode: str, agent_id: int | None) -> int:
+        return self.conn.execute(
+            "INSERT INTO content_packs (company_id, kind, topic, image_mode, created_by) "
+            "VALUES (%s,%s,%s,%s,%s) RETURNING id", (self.company_id, kind, topic, image_mode, agent_id)
+        ).fetchone()["id"]
+
+    def get_pack(self, pack_id: int) -> dict | None:
+        return self.conn.execute(
+            "SELECT * FROM content_packs WHERE id=%s AND company_id=%s", (pack_id, self.company_id)).fetchone()
+
+    def list_packs(self, limit: int = 50) -> list[dict]:
+        return self.conn.execute(
+            "SELECT * FROM content_packs WHERE company_id=%s ORDER BY id DESC LIMIT %s",
+            (self.company_id, limit)).fetchall()
+
+    def update_pack(self, pack_id: int, **fields) -> None:
+        bad = set(fields) - self._PACK_COLS
+        if bad:
+            raise ValueError(f"cannot update {bad}")
+        sets = ", ".join(f"{k}=%s" for k in fields)
+        vals = [Jsonb(_jsonable(v)) if isinstance(v, (dict, list)) else v for v in fields.values()]
+        self.conn.execute(f"UPDATE content_packs SET {sets}, updated_at=now() WHERE id=%s AND company_id=%s",
+                          (*vals, pack_id, self.company_id))
+
+    def move_pack(self, pack_id: int, new: str, allowed_from: tuple[str, ...]) -> dict | None:
+        return self.conn.execute(
+            "UPDATE content_packs SET status=%s, updated_at=now() WHERE id=%s AND company_id=%s "
+            "AND status = ANY(%s) RETURNING *", (new, pack_id, self.company_id, list(allowed_from))).fetchone()
+
+    # ---- public facts (the only source for marketing copy) ----
+    def list_facts(self) -> list[dict]:
+        return self.conn.execute(
+            "SELECT key, value FROM public_facts WHERE company_id=%s ORDER BY key", (self.company_id,)).fetchall()
+
+    def upsert_fact(self, key: str, value: str) -> None:
+        self.conn.execute(
+            "INSERT INTO public_facts (company_id, key, value) VALUES (%s,%s,%s) "
+            "ON CONFLICT (company_id, key) DO UPDATE SET value=EXCLUDED.value",
+            (self.company_id, key, value))
+
     # ---- notes ----
     def add_note(self, *, agent_id, kind, title, body, data=None) -> int:
         return self.conn.execute(

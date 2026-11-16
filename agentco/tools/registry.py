@@ -43,6 +43,16 @@ def _save_note(scope: CompanyScope, args: dict, ctx: dict):
                                       data=args.get("data") or {})}
 
 
+def _save_pack(scope: CompanyScope, args: dict, ctx: dict):
+    """DRAFT only: stores text/image refs on an existing pack. Nothing is ever published by AgentCo."""
+    fields = {k: v for k, v in args.items() if k in {"status", "copy", "hashtags", "image_brief", "image_prompt",
+                                                     "aspect_ratios", "image_file", "ad_setup", "claims_check", "error"}}
+    if fields.get("status") not in (None, "draft", "needs_review", "failed"):
+        raise ValueError("agents may only produce drafts")
+    scope.update_pack(int(args["pack_id"]), run_id=ctx.get("run_id"), **fields)
+    return {"pack_id": int(args["pack_id"])}
+
+
 TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("adspot_report_snapshot", Tier.READ, lambda s, a, c: adspot.snapshot(), frozenset({"adspot"})),
     Tool("sidadiya_report_snapshot", Tier.READ, lambda s, a, c: sidadiya.snapshot(), frozenset({"sidadiya"})),
@@ -53,8 +63,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     # HIGH-risk stubs: creating an approval is all that can happen until the executors exist.
     Tool("send_publication_mail", Tier.HIGH, _not_built("Phase 2"), frozenset({"adspot"}),
          describe=lambda a: f"Send mail to publication for booking {a.get('booking_ref', '?')}"),
-    Tool("publish_post", Tier.HIGH, _not_built("Phase 3"),
-         describe=lambda a: f"Publish social post {a.get('post_id', '?')}"),
+    Tool("save_content_pack", Tier.DRAFT, _save_pack),
     Tool("send_customer_mail", Tier.OWNER_COMMAND, _not_built("Phase 2"), frozenset({"adspot"}),
          describe=lambda a: f"Send payment confirmation for {a.get('booking_ref', '?')}", needs_booking_and_amount=True),
 ]}
@@ -65,7 +74,7 @@ DEPT_TOOLS: dict[str, frozenset[str]] = {
     "operations": frozenset({"adspot_report_snapshot", "save_note", "send_publication_mail"}),
     "insights": frozenset({"sidadiya_report_snapshot", "save_note"}),
     "customer_desk": frozenset({"read_mail", "create_mail_draft", "save_note"}),
-    "marketing": frozenset({"save_note", "publish_post"}),
+    "marketing": frozenset({"save_note", "save_content_pack"}),
     "finance": frozenset({"save_note"}),
     "engineering": frozenset({"save_note"}),
 }

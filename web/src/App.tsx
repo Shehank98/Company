@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, AuthError, Scope } from "./api";
 import Login from "./Login";
-import { Activity, Approvals, Chat, Costs, Departments, Tasks } from "./pages";
+import { Activity, Approvals, Chat, Costs, Departments, Posts, Tasks } from "./pages";
 
 const TABS = [
-  ["chat", "💬", "Chat"], ["approvals", "✅", "Approvals"], ["depts", "🏢", "Depts"],
+  ["chat", "💬", "Chat"], ["posts", "✍️", "Posts"], ["approvals", "✅", "Approvals"], ["depts", "🏢", "Depts"],
   ["tasks", "📋", "Tasks"], ["activity", "📜", "Activity"], ["costs", "💲", "Costs"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -43,7 +43,7 @@ export default function App() {
   if (authed === null) return <div className="login"><p>Loading…</p></div>;
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
 
-  const Page = { chat: Chat, approvals: Approvals, depts: Departments, tasks: Tasks, activity: Activity, costs: Costs }[tab];
+  const Page = { chat: Chat, posts: Posts, approvals: Approvals, depts: Departments, tasks: Tasks, activity: Activity, costs: Costs }[tab];
   return (
     <div className="app">
       <header>

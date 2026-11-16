@@ -17,7 +17,7 @@ def test_department_cannot_call_another_departments_tools():
         assert registry.call(s, ins, None, "send_publication_mail", {})["status"] == "denied"
     with company_scope("adspot") as s:
         assert registry.call(s, ops, None, "sidadiya_report_snapshot", {})["status"] == "denied"
-        assert registry.call(s, ops, None, "publish_post", {})["status"] == "denied"   # marketing's tool
+        assert registry.call(s, ops, None, "save_content_pack", {"pack_id": 1})["status"] == "denied"   # marketing's tool
 
 
 def test_company_data_scope_enforced_even_if_dept_matches():
@@ -57,9 +57,9 @@ def test_high_tier_only_creates_approval_and_never_runs(monkeypatch):
 
 
 def test_rejected_approval_cannot_execute():
-    mk = agent("sidadiya", "Marketing")
-    with company_scope("sidadiya") as s:
-        r = registry.call(s, mk, None, "publish_post", {"post_id": "p1"})
+    ops = agent("adspot", "AdSpot Ops")
+    with company_scope("adspot") as s:
+        r = registry.call(s, ops, None, "send_publication_mail", {"booking_ref": "B9"})
         assert r["status"] == "pending_approval"
         s.decide_approval(r["approval_id"], "rejected")
         with pytest.raises(registry.ToolDenied):
