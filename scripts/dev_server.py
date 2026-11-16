@@ -8,12 +8,16 @@ os.environ.update({
     "DATABASE_URL": "postgresql://agentco:agentco@localhost:5432/agentco_dev",
     "ADSPOT_RO_DATABASE_URL": "postgresql://agentco:agentco@localhost:5432/fake_adspot",
     "SIDADIYA_RO_DATABASE_URL": "postgresql://agentco:agentco@localhost:5432/fake_sidadiya",
-    "LLM_PROVIDER": "fake", "UPLOAD_DIR": "/tmp/agentco-dev-uploads", "COOKIE_SECURE": "false", "OWNER_EMAIL": "owner@example.com",
+    "LLM_PROVIDER": "fake", "UNDO_WINDOW_SECONDS": "6", "UPLOAD_DIR": "/tmp/agentco-dev-uploads", "COOKIE_SECURE": "false", "OWNER_EMAIL": "owner@example.com",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 import psycopg
 import uvicorn
+from fake_gmail import FakeGmail
+
+from agentco.connectors import gmail
 
 from agentco import db, scheduler, seed, worker
 from agentco.agents.runner import run_job  # noqa: F401
@@ -25,6 +29,9 @@ from agentco.tools import registry
 with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as c:
     c.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
 db.migrate(); seed.seed()
+_g = FakeGmail()
+_g.add_mail(id="d1", frm="a@example.com", subject="Question about BOOK-20260101-001", body="How much to book another ad next week?")
+gmail.set_client(_g)
 scheduler.tick()
 while worker.work_once():
     pass

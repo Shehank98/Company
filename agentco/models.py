@@ -74,7 +74,7 @@ EVENT_TYPES: dict[str, type[_Ev]] = {
 class Intent(BaseModel):
     kind: Literal[
         "status", "show_report", "list_approvals", "pause_agent", "resume_agent",
-        "money_action", "create_post", "create_ad", "unknown",
+        "money_action", "create_post", "create_ad", "mark_paid", "send_draft", "link_receipt", "unknown",
     ] = "unknown"
     company: Literal["adspot", "sidadiya", "all"] | None = None
     agent: str | None = Field(default=None, max_length=80)

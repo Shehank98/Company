@@ -1,13 +1,25 @@
 import { useEffect, useState } from "react";
 import { api, AuthError, Scope } from "./api";
 import Login from "./Login";
-import { Activity, Approvals, Chat, Costs, Departments, Posts, Tasks } from "./pages";
+import { Activity, Approvals, Bookings, Chat, Costs, Departments, Mail, Posts, Tasks } from "./pages";
 
 const TABS = [
-  ["chat", "💬", "Chat"], ["posts", "✍️", "Posts"], ["approvals", "✅", "Approvals"], ["depts", "🏢", "Depts"],
-  ["tasks", "📋", "Tasks"], ["activity", "📜", "Activity"], ["costs", "💲", "Costs"],
+  ["chat", "💬", "Chat"], ["approvals", "✅", "Approvals"], ["mail", "✉️", "Mail"],
+  ["bookings", "🧾", "Bookings"], ["posts", "✍️", "Posts"], ["more", "⋯", "More"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
+
+const MORE = [["depts", "Departments"], ["tasks", "Tasks"], ["activity", "Activity"], ["costs", "Costs"]] as const;
+function More({ scope }: { scope: Scope }) {
+  const [sub, setSub] = useState<(typeof MORE)[number][0]>("depts");
+  const P = { depts: Departments, tasks: Tasks, activity: Activity, costs: Costs }[sub];
+  return (
+    <div className="list">
+      <div className="seg">{MORE.map(([k, l]) => <button key={k} className={sub === k ? "on" : ""} onClick={() => setSub(k)}>{l}</button>)}</div>
+      <P scope={scope} />
+    </div>
+  );
+}
 
 function urlB64(s: string) {
   const p = "=".repeat((4 - (s.length % 4)) % 4), b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/"));
@@ -43,7 +55,7 @@ export default function App() {
   if (authed === null) return <div className="login"><p>Loading…</p></div>;
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
 
-  const Page = { chat: Chat, posts: Posts, approvals: Approvals, depts: Departments, tasks: Tasks, activity: Activity, costs: Costs }[tab];
+  const Page = { chat: Chat, approvals: Approvals, mail: Mail, bookings: Bookings, posts: Posts, more: More }[tab];
   return (
     <div className="app">
       <header>

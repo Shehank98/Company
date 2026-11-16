@@ -20,6 +20,18 @@ def set_handler(h: Handler | None) -> None:
 
 def _default(system: str, prompt: str) -> str:
     low = prompt.lower()
+    if "mail triage" in system.lower():
+        b = prompt.lower()
+        ref = re.search(r"\b(BOOK-\d{8}-\d{3}|ADM-\d{4}-\d{4})\b", prompt, re.I)
+        cat = ("spam" if "lottery" in b else "payment_proof" if ("slip" in b or "paid" in b)
+               else "complaint" if "complain" in b else "booking_enquiry" if ("how much" in b or "book" in b) else "other")
+        return json.dumps({"category": cat, "summary": "Customer wrote about: " + prompt.split("Subject:")[-1][:60].strip().replace("\n", " "),
+                           "booking_ref": ref.group(1) if ref else None, "amount": None})
+    if "greeting line" in system.lower():
+        n = re.search(r"first name: (.+)", prompt).group(1).strip()
+        return json.dumps({"greeting": f"Dear {n},"})
+    if "draft reply" in system.lower():
+        return "Thank you for your message. We will get back to you shortly."
     if "claims checker" in system.lower():
         return json.dumps({"ok": True, "issues": []})
     if "copywriter" in system.lower():
@@ -35,6 +47,19 @@ def _default(system: str, prompt: str) -> str:
     if "intent" in system.lower():
         m = re.search(r"\b(BOOK-\d{8}-\d{3}|ADM-\d{4}-\d{4})\b", prompt, re.I)
         company = "adspot" if "adspot" in low else "sidadiya" if "sidadiya" in low else "all"
+        ref = m.group(1) if m else None
+        co = "adspot" if "adspot" in low else "sidadiya" if "sidadiya" in low else None
+        stripped = re.sub(r"\b(?:BOOK-\d{8}-\d{3}|ADM-\d{4}-\d{4})\b", "", prompt, flags=re.I)
+        am = re.search(r"(?:rs\.?|lkr)\s*([\d,]+(?:\.\d+)?)", stripped, re.I)
+        amount = float(am.group(1).replace(",", "")) if am else None
+        if "payment received" in low or re.search(r"mark .*paid", low):
+            return json.dumps({"kind": "mark_paid", "company": co, "booking_ref": ref, "amount": amount})
+        if low.startswith("send"):
+            return json.dumps({"kind": "send_draft", "company": co, "booking_ref": ref})
+        if "receipt" in low and ref:
+            return json.dumps({"kind": "link_receipt", "company": co, "booking_ref": ref})
+        if "payout" in low:
+            return json.dumps({"kind": "money_action", "company": co})
         tm = re.search(r"\b(?:about|on)\s+(.+)$", prompt, re.I)
         if ("post" in low or "ad " in low or low.startswith("ad")) and "paid" not in low and "approval" not in low:
             kind = "create_ad" if re.search(r"\bad\b", low) and "post" not in low else "create_post"

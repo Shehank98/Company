@@ -19,13 +19,20 @@ def tick(now: datetime | None = None) -> int:
     n = 0
     for co in companies:
         with scope_by_id(co["id"], co["slug"]) as s:
-            due = [ag for ag in s.list_agents()
-                   if ag["status"] == "active" and ag["schedule_hhmm"] and ag["schedule_hhmm"] <= hhmm]
+            agents = s.list_agents()
+            due = [ag for ag in agents if ag["status"] == "active" and ag["schedule_hhmm"] and ag["schedule_hhmm"] <= hhmm]
+            pollers = [ag for ag in agents if ag["status"] == "active" and ag["role"] == "customer_desk"]
         with db.admin() as a:
             for ag in due:
                 if queue.enqueue(a, company_id=co["id"], agent_id=ag["id"], kind="daily_report",
                                  dedupe_key=f"daily:{ag['id']}:{day}"):
                     n += 1
+            for ag in pollers:   # bookings sync + mailbox, once per 2-minute bucket
+                if queue.enqueue(a, company_id=co["id"], agent_id=ag["id"], kind="mail_poll",
+                                 dedupe_key=f"mail:{ag['id']}:{int(now.timestamp()) // 120}"):
+                    n += 1
+    with db.admin() as a:       # housekeeping: finished jobs older than a week
+        a.execute("DELETE FROM jobs WHERE status IN ('done','failed') AND created_at < now() - interval '7 days'")
     return n
 
 

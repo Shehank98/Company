@@ -95,3 +95,9 @@ Behaviour that shapes AgentCo:
 - Phase 1: SELECT-only roles, read-only transactions, fixed parametrised SQL, aggregates only.
 - Phase 2 will add writes **only** through narrow, audited services for status fields, and only after an owner command (see spec §7).
 - All connector credentials are Railway env vars and never appear in model context.
+
+## 6. Phase 2 additions
+* AgentCo mirrors AdSpot `bookings` (read-only, every 2 minutes and on demand) into its own `bookings` table and keeps its own workflow state: `awaiting_payment -> paid -> sent_to_publication -> receipt_received -> customer_receipt_sent -> published -> closed` (+ `exception`). The live app can only move AgentCo's state forward.
+* Writes back to AdSpot (optional `ADSPOT_WRITE_DATABASE_URL`): `payment_status`, `status`, `payment_reference`, `sent_to_publication_at` only, via column-level grants (README).
+* AdSpot has no Gmail integration; AgentCo's Gmail connector is new. AdSpot's own Apps Script mails (booking confirmation, invoice) keep working unchanged. AgentCo's mails go from the Gmail account you connect.
+* Because AdSpot's confirmation/invoice mails still go out from Apps Script, the customer may get both those and AgentCo's "payment received" mail. Tell me if you want to switch one off.

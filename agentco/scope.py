@@ -214,6 +214,17 @@ class CompanyScope:
             "ON CONFLICT (company_id, key) DO UPDATE SET value=EXCLUDED.value",
             (self.company_id, key, value))
 
+    # ---- per-company settings ----
+    def get_setting(self, key: str, default: str = "") -> str:
+        r = self.conn.execute("SELECT value FROM company_settings WHERE company_id=%s AND key=%s",
+                              (self.company_id, key)).fetchone()
+        return r["value"] if r else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        self.conn.execute("INSERT INTO company_settings (company_id, key, value) VALUES (%s,%s,%s) "
+                          "ON CONFLICT (company_id, key) DO UPDATE SET value=EXCLUDED.value",
+                          (self.company_id, key, value))
+
     # ---- notes ----
     def add_note(self, *, agent_id, kind, title, body, data=None) -> int:
         return self.conn.execute(

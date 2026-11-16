@@ -31,9 +31,10 @@ export function Chat({ scope }: { scope: Scope }) {
     try { await api("/api/chat", { body: { text, scope } }); setText(""); await reload(); } catch (e: any) { setErr(e.message); }
     setBusy(false);
   }
-  async function upload(f?: File) {
+  async function upload(f?: File, kind = "") {
     if (!f) return;
-    const form = new FormData(); form.append("file", f); form.append("scope", scope);
+    const form = new FormData(); form.append("file", f); form.append("scope", scope === "all" ? "adspot" : scope);
+    if (kind === "receipt") { form.append("kind", "receipt"); form.append("booking_ref", prompt("Which booking? Reference (leave empty to say it in chat)") ?? ""); }
     try { await api("/api/chat/upload", { form }); await reload(); } catch (e: any) { setErr(e.message); }
   }
   return (
@@ -48,6 +49,7 @@ export function Chat({ scope }: { scope: Scope }) {
       {err && <p className="err">{err}</p>}
       <form className="composer" onSubmit={send}>
         <label className="icon" title="Upload file">📎<input type="file" hidden accept="image/*,application/pdf" onChange={(e) => upload(e.target.files?.[0])} /></label>
+        <label className="icon" title="Publication receipt">🧾<input type="file" hidden accept="image/*,application/pdf" onChange={(e) => upload(e.target.files?.[0], "receipt")} /></label>
         <label className="icon" title="Camera">📷<input type="file" hidden accept="image/*" capture="environment" onChange={(e) => upload(e.target.files?.[0])} /></label>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Message Command" />
         <button className="primary" disabled={busy}>Send</button>
@@ -59,11 +61,12 @@ export function Chat({ scope }: { scope: Scope }) {
 export function Approvals({ scope }: { scope: Scope }) {
   const { data, err, reload } = useLoad<any[]>(`/api/approvals?scope=${scope}`, [scope], 8000);
   const [edit, setEdit] = useState<Record<number, string>>({});
+  const [ok, setOk] = useState<Record<number, boolean>>({});
   const [note, setNote] = useState("");
   async function act(a: any, decision: string) {
     setNote("");
     try {
-      const r = await api<{ note?: string }>(`/api/approvals/${a.company}/${a.id}`, { body: { decision, summary: edit[a.id] } });
+      const r = await api<{ note?: string }>(`/api/approvals/${a.company}/${a.id}`, { body: { decision, summary: edit[a.id], accept_mismatch: !!ok[a.id] } });
       if (r.note) setNote(r.note);
       setEdit((e) => { const { [a.id]: _, ...rest } = e; return rest; });
       reload();
@@ -77,10 +80,16 @@ export function Approvals({ scope }: { scope: Scope }) {
         <div className="card" key={`${a.company}-${a.id}`}>
           <div className="row"><span className="badge">{a.company}</span><span className="badge warn">{a.tier}</span><small>{fmt(a.created_at)}</small></div>
           <textarea value={edit[a.id] ?? a.summary} onChange={(e) => setEdit({ ...edit, [a.id]: e.target.value })} rows={2} />
-          {(a.booking_ref || a.amount) && <p className="confirm">Booking <b>{a.booking_ref ?? "?"}</b> · Amount <b>{a.amount ?? "?"}</b></p>}
+          {(a.booking_ref || a.amount) && (
+            <p className="confirm">Booking <b>{a.booking_ref ?? "?"}</b>{a.payload?.customer ? <> · {a.payload.customer}</> : null} · Amount <b>Rs. {Number(a.amount).toLocaleString()}</b>
+              {a.payload?.expected_total != null && <><br /><small>Booking total: Rs. {Number(a.payload.expected_total).toLocaleString()}</small></>}
+              {a.payload?.matched_exactly === false && <><br /><small>Matched from a partial reference. Check the booking above is the right one.</small></>}</p>)}
+          {a.payload?.mismatch && (
+            <label className="confirm bad"><input type="checkbox" checked={!!ok[a.id]} onChange={(e) => setOk({ ...ok, [a.id]: e.target.checked })} style={{ width: 22, minHeight: 22 }} />
+              {" "}Amounts differ. Confirm anyway.</label>)}
           <pre className="payload">{JSON.stringify(a.payload, null, 1)}</pre>
           <div className="row">
-            <button className="primary" onClick={() => act(a, "approve")}>Approve</button>
+            <button className="primary" onClick={() => act(a, "approve")} disabled={!!a.payload?.mismatch && !ok[a.id]}>{a.tier === "OWNER_COMMAND" ? "Confirm" : "Approve"}</button>
             <button onClick={() => act(a, "edit")} disabled={edit[a.id] === undefined}>Save edit</button>
             <button className="danger" onClick={() => act(a, "reject")}>Reject</button>
           </div>
@@ -294,6 +303,144 @@ export function Posts({ scope }: { scope: Scope }) {
       {err && <p className="err">{err}</p>}
       {data?.map((p) => <Pack key={`${p.company}-${p.id}`} p={p} reload={reload} />)}
       <Facts scope={scope} />
+    </div>
+  );
+}
+
+
+// ---------------- Bookings + payouts ----------------
+const STATE_LABEL: Record<string, string> = { awaiting_payment: "awaiting payment", paid: "paid", sent_to_publication: "sent to paper", receipt_received: "receipt in", customer_receipt_sent: "customer has receipt", published: "published", closed: "closed", exception: "exception", enquiry: "enquiry" };
+
+export function Bookings({ scope }: { scope: Scope }) {
+  const co = scope === "sidadiya" ? "sidadiya" : "adspot";
+  const { data, err, reload } = useLoad<any[]>(`/api/bookings?scope=${co}`, [co], 10000);
+  const pay = useLoad<any[]>(`/api/payouts?scope=${co}`, [co], 15000);
+  const [msg, setMsg] = useState("");
+  if (co === "sidadiya") return <div className="list"><p className="hint">Booking payments and payouts are AdSpot only. Switch to AdSpot.</p></div>;
+  const run = async (fn: () => Promise<any>, ok?: (r: any) => string) => { setMsg(""); try { const r = await fn(); if (ok) setMsg(ok(r)); reload(); pay.reload(); } catch (e: any) { setMsg(e.message); } };
+  const markPaid = (b: any) => run(() => api(`/api/bookings/adspot/${b.booking_ref}/mark-paid`, { body: {} }), (r) => r.reply);
+  const receipt = (b: any, f?: File) => { if (!f) return; const form = new FormData(); form.append("file", f); run(() => api(`/api/bookings/adspot/${b.booking_ref}/receipt`, { form }), () => "Receipt saved. Review the customer mail in the Mail tab."); };
+  return (
+    <div className="list">
+      {(err || msg) && <p className={err ? "err" : "hint"} style={{ whiteSpace: "pre-wrap" }}>{err || msg}</p>}
+      <button onClick={() => run(() => api("/api/bookings/adspot/sync", { method: "POST" }), (r) => `Synced ${r.synced} booking(s).`)}>Refresh from AdSpot</button>
+      {data?.length === 0 && <p className="hint">No bookings yet. They appear within 2 minutes of the worker running.</p>}
+      {data?.map((b) => (
+        <div className="card" key={b.booking_ref}>
+          <div className="row"><b>{b.booking_ref}</b><span className={`badge ${b.state === "exception" ? "failed" : ""}`}>{STATE_LABEL[b.state] ?? b.state}</span></div>
+          <small>{b.quotation_ref} · {b.customer_name} · {b.customer_email}</small>
+          <div>Rs. {Number(b.total_amount).toLocaleString()} {b.payment_recorded && <span className="badge done">payment recorded</span>}</div>
+          {b.exception_reason && <small className="err">{b.exception_reason}</small>}
+          <div className="row">
+            {!b.payment_recorded && b.state !== "exception" && <button className="primary" onClick={() => markPaid(b)}>Mark paid</button>}
+            {b.payment_recorded && <button onClick={() => run(() => api(`/api/bookings/adspot/${b.booking_ref}/publication-drafts`, { method: "POST" }), (r) => (r.problems?.[0] ?? `${r.drafts.length} draft(s) in Mail.`))}>Publication draft</button>}
+            {b.payment_recorded && <label className="btnlink">Upload receipt<input type="file" hidden accept="image/*,application/pdf" onChange={(e) => receipt(b, e.target.files?.[0])} /></label>}
+            {["customer_receipt_sent", "published"].includes(b.state) && <button onClick={() => run(() => api(`/api/bookings/adspot/${b.booking_ref}/state`, { body: { to: b.state === "published" ? "closed" : "published" } }))}>{b.state === "published" ? "Close" : "Mark published"}</button>}
+          </div>
+        </div>
+      ))}
+      <h3>Payouts to publications (you pay by hand)</h3>
+      {pay.data?.slice(0, 2).map((p) => (
+        <div className="card" key={p.id}>
+          <div className="row"><b>Batch #{p.id}</b><span className={`badge ${p.status === "open" ? "warn" : "done"}`}>{p.status.replace("_", " ")}</span></div>
+          {Object.entries(p.totals as Record<string, number>).map(([k, v]) => <div className="row" key={k} style={{ justifyContent: "space-between" }}><span>{k}</span><b>Rs. {Number(v).toLocaleString()}</b></div>)}
+          {p.items.length === 0 && <small>Nothing waiting.</small>}
+          {p.items.length > 0 && <small>{p.items.length} booking(s) · total Rs. {Number(p.grand_total).toLocaleString()}</small>}
+          <div className="row">
+            {p.items.length > 0 && <a className="btnlink" href={`/api/payouts/adspot/${p.id}.csv`} download>Download CSV</a>}
+            {p.status === "open" && p.items.length > 0 && <button onClick={() => confirm("Only press this AFTER you have paid the publications by bank transfer. It just records it.") && run(() => api(`/api/payouts/adspot/${p.id}/mark-paid`, { method: "POST" }), (r) => `Recorded ${r.recorded} payout line(s).`)}>I paid them (record it)</button>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------- Mail ----------------
+const CAT: Record<string, string> = { booking_enquiry: "enquiry", payment_proof: "payment proof", artwork_or_ad_copy: "artwork / ad copy", publication_reply: "publication reply", complaint: "complaint", spam: "spam", other: "other" };
+
+function Countdown({ until }: { until: string }) {
+  const [n, setN] = useState(0);
+  useEffect(() => { const t = setInterval(() => setN((x) => x + 1), 1000); return () => clearInterval(t); }, []);
+  const left = Math.max(0, Math.ceil((new Date(until).getTime() - Date.now()) / 1000));
+  void n;
+  return <span className="badge warn">{left > 0 ? `sends in ${left}s` : "sending…"}</span>;
+}
+
+function Outbox({ m, undo, reload, setMsg }: { m: any; undo: number; reload: () => void; setMsg: (s: string) => void }) {
+  const [subject, setSubject] = useState(m.subject);
+  const [body, setBody] = useState(m.body);
+  const call = async (path: string, method = "POST", b?: unknown) => { setMsg(""); try { await api(path, { method, body: b }); reload(); } catch (e: any) { setMsg(e.message); } };
+  const id = `/api/mail/adspot/${m.id}`;
+  const draft = m.status === "draft";
+  return (
+    <div className="card">
+      <div className="row"><span className="badge">{m.kind.replace("_", " ")}</span><span className={`badge ${m.status === "sent" ? "done" : m.status === "failed" ? "failed" : "warn"}`}>{m.status}</span>
+        {m.status === "scheduled" && m.send_after && <Countdown until={m.send_after} />}<small>{m.booking_ref}</small></div>
+      <small>To: <b>{m.to_addr}</b></small>
+      {draft ? <><input value={subject} onChange={(e) => setSubject(e.target.value)} /><textarea rows={9} value={body} onChange={(e) => setBody(e.target.value)} /></>
+        : <><b>{m.subject}</b><div className="text">{m.body}</div></>}
+      {(m.attachments ?? []).length > 0 && <small>Attachments: {m.attachments.map((a: any) => a.name).join(", ")}</small>}
+      {m.error && <p className="err">{m.error}</p>}
+      <div className="row">
+        {draft && <button onClick={() => call(id, "PUT", { subject, body })} disabled={subject === m.subject && body === m.body}>Save edit</button>}
+        {draft && <button className="primary" onClick={() => confirm(`Send this mail to ${m.to_addr} now?`) && call(`${id}/send`)}>Send</button>}
+        {m.status === "scheduled" && <button className="danger" onClick={() => call(`${id}/undo`)}>Undo</button>}
+        {["cancelled", "failed"].includes(m.status) && m.kind.startsWith("customer") && <button onClick={() => call(`${id}/reschedule`)}>Send again</button>}
+      </div>
+    </div>
+  );
+}
+
+function Publications() {
+  const { data, reload } = useLoad<any[]>("/api/publications?scope=adspot");
+  const settings = useLoad<Record<string, string>>("/api/settings/adspot");
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [err, setErr] = useState("");
+  const save = async (p: any) => { try { await api("/api/publications/adspot", { method: "PUT", body: { group_ref: p.group_ref, name: p.name, email: edit[p.group_ref] ?? p.email, active: p.active } }); setErr(""); setEdit({}); reload(); } catch (e: any) { setErr(e.message); } };
+  const toggle = async (k: string, v: boolean) => { await api(`/api/settings/adspot/${k}`, { method: "PUT", body: { value: String(v) } }); settings.reload(); };
+  return (
+    <div className="card">
+      <button onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"} publication addresses and mail settings</button>
+      {open && <>
+        <small>These are the ONLY addresses AgentCo will ever mail a publication. They are never taken from an email.</small>
+        {data?.map((p) => (
+          <div className="kv" key={p.group_ref}><small>{p.name} ({p.group_ref})</small>
+            <input placeholder="newspaper desk email" value={edit[p.group_ref] ?? p.email} onChange={(e) => setEdit({ ...edit, [p.group_ref]: e.target.value })} />
+            {edit[p.group_ref] !== undefined && <button className="small primary" onClick={() => save(p)}>Save</button>}</div>))}
+        {err && <p className="err">{err}</p>}
+        <label className="row"><input type="checkbox" style={{ width: 22, minHeight: 22 }} checked={settings.data?.auto_send_receipts === "true"} onChange={(e) => toggle("auto_send_receipts", e.target.checked)} /> Auto-send publication receipts to customers (after the undo window)</label>
+      </>}
+    </div>
+  );
+}
+
+export function Mail({ scope }: { scope: Scope }) {
+  const co = scope === "sidadiya" ? "sidadiya" : "adspot";
+  const { data, err, reload } = useLoad<any>(`/api/mail?scope=${co}`, [co], 4000);
+  const [msg, setMsg] = useState("");
+  if (co === "sidadiya") return <div className="list"><p className="hint">The mailbox workflow is AdSpot only. Switch to AdSpot.</p></div>;
+  const out: any[] = data?.outbox ?? [];
+  const todo = out.filter((m) => ["draft", "scheduled", "failed", "sending"].includes(m.status));
+  const done = out.filter((m) => ["sent", "cancelled"].includes(m.status));
+  return (
+    <div className="list">
+      {err && <p className="err">{err}</p>}{msg && <p className="err">{msg}</p>}
+      {data && !data.gmail_configured && <p className="confirm">Gmail is not connected yet, so no mail can be read or sent. Drafts still appear here. See the README (Gmail setup).</p>}
+      <Publications />
+      <h3>Needs you</h3>
+      {todo.length === 0 && <p className="hint">No drafts or scheduled mail.</p>}
+      {todo.map((m) => <Outbox key={m.id} m={m} undo={data.undo_window_seconds} reload={reload} setMsg={setMsg} />)}
+      <h3>Inbox summaries</h3>
+      {data?.inbox.length === 0 && <p className="hint">No mail triaged yet.</p>}
+      {data?.inbox.map((m: any) => (
+        <div className="card slim" key={m.id}>
+          <div className="row"><span className="badge">{CAT[m.category] ?? m.category}</span>{m.booking_ref && <span className={`badge ${m.link_confidence === "verified" ? "done" : "warn"}`}>{m.booking_ref}{m.link_confidence === "verified" ? "" : " · sender unverified"}</span>}</div>
+          <b>{m.subject}</b><small>{m.from_addr}</small><div>{m.summary}</div>{m.draft_id && <small>A reply draft is waiting in Gmail.</small>}
+        </div>))}
+      <h3>Sent / cancelled</h3>
+      {done.map((m) => <Outbox key={m.id} m={m} undo={0} reload={reload} setMsg={setMsg} />)}
     </div>
   );
 }

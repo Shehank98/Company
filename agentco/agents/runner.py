@@ -46,17 +46,27 @@ def run_job(job: dict) -> str:
         agent = scope.get_agent(job["agent_id"]) if job["agent_id"] else None
         if agent is None:
             return "failed:no agent"
-        task_id = scope.create_task(f"{job['kind']} ({agent['name']})", agent["id"], job["payload"])
+        # the 2-minute mailbox poll is audited as a run but is not a "task" (keeps the Tasks board readable)
+        task_id = None if job["kind"] == "mail_poll" else scope.create_task(f"{job['kind']} ({agent['name']})", agent["id"], job["payload"])
         run_id = scope.start_run(agent["id"], task_id)
+
+        def set_task(status: str) -> None:
+            if task_id is not None:
+                scope.update_task(task_id, status)
+
         if agent["status"] != "active":
             scope.finish_run(run_id, "skipped", f"agent is {agent['status']}")
-            scope.update_task(task_id, "blocked")
+            set_task("blocked")
             return "skipped"
         try:
             budget.ensure(scope, agent)
-            scope.update_task(task_id, "running")
+            set_task("running")
             if agent["role"] in ROLE_TOOL:
                 message = _daily(scope, agent, run_id)
+            elif agent["role"] == "customer_desk" and job["kind"] == "mail_poll":
+                from .. import mail_intake
+                message = None
+                mail_intake.run(scope, agent, run_id)
             elif agent["role"] == "marketing" and job["kind"] == "content_pack":
                 from .. import content
                 co_name = db_company_name(job["company_id"])
@@ -64,14 +74,14 @@ def run_job(job: dict) -> str:
             else:
                 raise RuntimeError(f"role {agent['role']!r} has no scheduled behaviour")
             scope.finish_run(run_id, "done")
-            scope.update_task(task_id, "done")
+            set_task("done")
         except budget.BudgetExceeded as e:
             scope.finish_run(run_id, "budget_stopped", str(e))
-            scope.update_task(task_id, "blocked")
+            set_task("blocked")
             outcome, message = "budget_stopped", f"{agent['name']} stopped: monthly budget reached ({e})."
         except Exception as e:  # keep failure info committed
             scope.finish_run(run_id, "failed", f"{type(e).__name__}: {e}"[:500])
-            scope.update_task(task_id, "failed")
+            set_task("failed")
             if job["kind"] == "content_pack":
                 scope.update_pack(int(job["payload"]["pack_id"]), status="failed", error=f"{type(e).__name__}: {e}"[:300])
             outcome, message = f"failed:{type(e).__name__}", f"{agent['name']} failed: {e}"[:500]

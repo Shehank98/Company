@@ -8,7 +8,7 @@ AGENTS = {
     "adspot": [
         ("command", "Command", "command", "active", None),
         ("operations", "AdSpot Ops", "ops_daily", "active", "07:30"),
-        ("customer_desk", "Customer Desk", "customer_desk", "paused", None),   # Phase 2
+        ("customer_desk", "Customer Desk", "customer_desk", "active", None),   # mailbox + bookings sync
         ("marketing", "Marketing", "marketing", "active", None),               # manual-publish packs
         ("finance", "Finance", "finance", "paused", None),                     # Phase 2
         ("engineering", "Engineering", "engineering", "paused", None),         # Phase 4

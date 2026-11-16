@@ -73,9 +73,12 @@ def test_approval_flow_and_double_decision(client):
     assert [i["id"] for i in items] == [ap] and items[0]["company"] == "adspot"
     # the other company cannot decide it (RLS): not found / already decided
     assert client.post(f"/api/approvals/sidadiya/{ap}", json={"decision": "approve"}).status_code == 409
+    # a publication-mail approval with no draft attached cannot execute; the approval stays pending (rolled back)
     r = client.post(f"/api/approvals/adspot/{ap}", json={"decision": "approve"})
-    assert r.status_code == 200 and "nothing was sent" in r.json()["note"]
-    assert client.post(f"/api/approvals/adspot/{ap}", json={"decision": "reject"}).status_code == 409
+    assert r.status_code == 409 and "no draft" in r.json()["detail"]
+    assert [i["id"] for i in client.get("/api/approvals?scope=adspot").json()] == [ap]
+    assert client.post(f"/api/approvals/adspot/{ap}", json={"decision": "reject"}).status_code == 200
+    assert client.post(f"/api/approvals/adspot/{ap}", json={"decision": "approve"}).status_code == 409
 
 
 def test_edit_keeps_approval_pending(client):

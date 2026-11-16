@@ -2,7 +2,7 @@
 import logging
 import time
 
-from . import db
+from . import db, mailer
 from .agents.runner import run_job
 from .orchestrator import queue
 
@@ -10,6 +10,10 @@ log = logging.getLogger("agentco.worker")
 
 
 def work_once() -> bool:
+    try:
+        mailer.send_due()                       # customer mails whose undo window has passed
+    except Exception:
+        log.exception("send_due failed")
     with db.admin() as conn:
         queue.requeue_stuck(conn)
         job = queue.claim_one(conn)
@@ -26,9 +30,19 @@ def work_once() -> bool:
 
 
 def main() -> None:
+    """Runs jobs, sends mail whose undo window passed, and drives the scheduler itself (tick is idempotent), so no
+    separate cron service is needed for the 2-minute mailbox poll."""
+    from . import scheduler
     logging.basicConfig(level=logging.INFO)
     log.info("worker started")
+    last_tick = 0.0
     while True:
+        if time.monotonic() - last_tick > 60:
+            try:
+                scheduler.tick()
+            except Exception:
+                log.exception("scheduler tick failed")
+            last_tick = time.monotonic()
         if not work_once():
             time.sleep(2)
 

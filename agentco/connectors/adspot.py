@@ -37,3 +37,30 @@ def snapshot() -> dict:
                       BETWEEN CURRENT_DATE AND CURRENT_DATE + 7""")["n"],
         }
     return out
+
+
+# ---- Phase 2: row-level reads used to mirror bookings. Output contains customer PII and is stored in AgentCo's
+# ---- own DB under RLS; it is NEVER sent to a model except the customer's first name for the email greeting.
+_BOOKING_COLS = ("booking_id, quotation_number, customer_name, customer_email, total_amount, items, status, "
+                 "payment_status, receipt_status, sent_to_publication_at, published_at")
+
+
+def fetch_bookings(days: int = 90) -> list[dict]:
+    with ro_connect(get_settings().adspot_ro_database_url, "adspot") as c:
+        return rows(c, f"SELECT {_BOOKING_COLS} FROM bookings WHERE created_at >= now() - make_interval(days => %s) "
+                       "OR payment_status = 'pending' ORDER BY created_at DESC LIMIT 2000", (days,))
+
+
+def fetch_booking(ref: str) -> dict | None:
+    """Exact match on booking_id or quotation_number (case-insensitive)."""
+    with ro_connect(get_settings().adspot_ro_database_url, "adspot") as c:
+        return one(c, f"SELECT {_BOOKING_COLS} FROM bookings WHERE upper(booking_id)=upper(%s) "
+                      "OR upper(quotation_number)=upper(%s) LIMIT 1", (ref, ref))
+
+
+def newspaper_groups() -> dict[str, dict]:
+    """newspaperId -> {group_ref, group_name}. The site does not save groupId on booking items, so map here."""
+    with ro_connect(get_settings().adspot_ro_database_url, "adspot") as c:
+        return {r["id"]: {"group_ref": r["group_id"], "group_name": r["group_name"], "newspaper": r["name"]}
+                for r in rows(c, "SELECT n.id, n.group_id, n.name, g.name AS group_name FROM newspapers n "
+                                 "LEFT JOIN publication_groups g ON g.id = n.group_id")}

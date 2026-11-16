@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     gemini_price_pro_out: float = 10.0
     gemini_image_model: str = ""            # e.g. the Nano Banana model id; empty => flow_manual only
     gemini_image_price_usd: float = 0.04    # per image - VERIFY against current pricing
+    # Phase 2
+    adspot_write_database_url: str = ""     # optional: role with UPDATE on a few AdSpot status columns only
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
+    gmail_label: str = "AgentCo"
+    undo_window_seconds: int = 30
     omniroute_enabled: bool = False         # Phase 3; PUBLIC-class tasks only
 
     # Owner auth

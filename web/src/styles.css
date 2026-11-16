@@ -41,3 +41,6 @@ button.small { min-height: 34px; padding: 4px 10px; font-size: 13px; } .grow { f
 .badge.draft, .badge.approved, .badge.posted { color: var(--ok); } .badge.needs_review, .badge.drafting { color: var(--warn); } .badge.rejected { color: var(--bad); }
 .confirm ul { margin: 4px 0 0; padding-left: 18px; }
 nav small { font-size: 10px; }
+
+h3 { margin: 10px 0 0; font-size: 15px; color: var(--mute); } .confirm.bad { border-color: var(--bad); color: var(--bad); display: flex; align-items: center; gap: 6px; }
+.seg + * { margin-top: 10px; }

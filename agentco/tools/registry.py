@@ -61,12 +61,31 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("read_mail", Tier.READ, _not_built("Phase 2"), frozenset({"adspot"})),
     Tool("create_mail_draft", Tier.DRAFT, _not_built("Phase 2"), frozenset({"adspot"})),
     # HIGH-risk stubs: creating an approval is all that can happen until the executors exist.
-    Tool("send_publication_mail", Tier.HIGH, _not_built("Phase 2"), frozenset({"adspot"}),
+    Tool("send_publication_mail", Tier.HIGH, lambda s, a, c: _send_pub(s, a), frozenset({"adspot"}),
          describe=lambda a: f"Send mail to publication for booking {a.get('booking_ref', '?')}"),
     Tool("save_content_pack", Tier.DRAFT, _save_pack),
-    Tool("send_customer_mail", Tier.OWNER_COMMAND, _not_built("Phase 2"), frozenset({"adspot"}),
-         describe=lambda a: f"Send payment confirmation for {a.get('booking_ref', '?')}", needs_booking_and_amount=True),
+    Tool("send_customer_mail", Tier.OWNER_COMMAND, _not_built("later"), frozenset({"adspot"}),
+         describe=lambda a: f"Send mail for {a.get('booking_ref', '?')}", needs_booking_and_amount=True),
+    # Owner-originated only (never in any department allowlist): created by owner_command() from a chat command.
+    Tool("mark_booking_paid", Tier.OWNER_COMMAND, lambda s, a, c: _pay().execute_mark_paid(s, a, c), frozenset({"adspot"}),
+         describe=lambda a: f"Mark {a.get('booking_ref', '?')} paid", needs_booking_and_amount=True),
 ]}
+
+
+def _send_pub(scope, args):
+    """Runs ONLY from execute_approved. Sends the existing DRAFT by id; recipient rules are enforced in mailer."""
+    from .. import mailer
+    if "outbox_id" not in args:
+        raise ToolDenied("no draft is attached to this approval")
+    r = mailer.send_outbox(scope.company_id, scope.slug, int(args["outbox_id"]), "approved")
+    if r["status"] != "sent":
+        raise ToolDenied(f"mail was not sent: {r.get('reason', r['status'])}")
+    return r
+
+
+def _pay():
+    from .. import payments           # late import: payments imports this module
+    return payments
 
 # Department allowlists. NOTE: customer_desk has no send tool of any kind.
 DEPT_TOOLS: dict[str, frozenset[str]] = {
@@ -129,7 +148,21 @@ def call(scope: CompanyScope, agent: dict, run_id: int | None, name: str, args: 
     return {"status": "pending_approval", "approval_id": approval_id}
 
 
-def execute_approved(scope: CompanyScope, approval_id: int) -> dict:
+def owner_command(scope: CompanyScope, tool: str, args: dict, summary: str, booking_ref: str, amount: float) -> int:
+    """Create the confirm card for an owner chat command. Never executes. Bound to booking + amount."""
+    t = TOOLS.get(tool)
+    if t is None or t.tier != Tier.OWNER_COMMAND or (t.companies and scope.slug not in t.companies):
+        raise ToolDenied("not an owner-command tool for this company")
+    aid, created = scope.create_approval(tool=tool, tier=Tier.OWNER_COMMAND, summary=summary, payload=args,
+                                         agent_id=None, run_id=None, booking_ref=booking_ref, amount=amount)
+    scope.log_tool_call(run_id=None, agent_id=None, tool=tool, tier=Tier.OWNER_COMMAND, args=args,
+                        status="pending_approval", result={"approval_id": aid})
+    if created:
+        scope.emit("approval.requested", {"approval_id": aid, "tool": tool}, "command")
+    return aid
+
+
+def execute_approved(scope: CompanyScope, approval_id: int, accept_mismatch: bool = False) -> dict:
     """Run a HIGH/OWNER_COMMAND handler. Refuses unless the approval row is 'approved'."""
     ap = scope.get_approval(approval_id)
     if ap is None:
@@ -139,7 +172,12 @@ def execute_approved(scope: CompanyScope, approval_id: int) -> dict:
     tool = TOOLS[ap["tool"]]
     if tool.companies is not None and scope.slug not in tool.companies:
         raise ToolDenied("tool not available to this company")
-    result = tool.handler(scope, ap["payload"], {"approval_id": approval_id})
+    if tool.needs_booking_and_amount and (ap["booking_ref"] != ap["payload"].get("booking_ref")
+                                          or float(ap["amount"] or -1) != float(ap["payload"].get("amount", -2))):
+        raise ToolDenied("approval is not bound to the booking and amount it executes")
+    result = tool.handler(scope, ap["payload"], {"approval_id": approval_id, "accept_mismatch": accept_mismatch})
     scope.conn.execute("UPDATE approvals SET status='executed' WHERE id=%s AND company_id=%s",
                        (approval_id, scope.company_id))
+    scope.log_tool_call(run_id=None, agent_id=None, tool=ap["tool"], tier=ap["tier"], args=ap["payload"], status="ok",
+                        result=result if isinstance(result, dict) else {"value": result})
     return {"status": "executed", "result": result}

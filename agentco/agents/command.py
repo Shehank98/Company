@@ -13,14 +13,18 @@ from . import budget
 
 INTENT_SYSTEM = (
     "You convert an owner's chat message into an intent. Return JSON only with keys: "
-    "kind (status|show_report|list_approvals|pause_agent|resume_agent|create_post|create_ad|money_action|unknown), "
+    "kind (status|show_report|list_approvals|pause_agent|resume_agent|create_post|create_ad|mark_paid|send_draft|link_receipt|money_action|unknown), "
     "company (adspot|sidadiya|all|null), agent (agent name or null), booking_ref (e.g. BOOK-20260101-123 "
-    "or ADM-2026-1234, or null), amount (number or null), topic (what the post/ad is about, or null). Use create_post to draft a social post and create_ad to draft an Ads Manager setup sheet. Use money_action for anything about marking "
-    "paid, payments, payouts, sending mail or posting. Never invent values."
+    "or ADM-2026-1234, or null), amount (number or null), topic (what the post/ad is about, or null). "
+    "Use mark_paid for 'payment received for <ref>' (put the stated amount in amount); send_draft when the owner says "
+    "to send a publication mail draft; link_receipt when the owner names the booking for a receipt they uploaded. "
+    "Use create_post to draft a social post and create_ad to draft an Ads Manager setup sheet. "
+    "Use money_action for payouts or any other money request. Never invent values."
 )
 
 HELP = ("I can: show status, show today's report, list approvals, pause/resume an agent, and draft posts/ads. "
-        "Try: \"status\", \"approvals\", \"pause AdSpot Ops\", \"post for AdSpot about booking classified ads online\".")
+        "Try: \"status\", \"approvals\", \"payment received for BOOK-20260101-001\", \"send BOOK-20260101-001\", "
+        "\"post for AdSpot about booking classified ads online\".")
 
 
 def _companies(choice: str) -> list[dict]:
@@ -52,6 +56,37 @@ def handle(text: str, scope_choice: str) -> str:
     choice = intent.company or scope_choice
     cos = _companies(choice) or _companies("all")
 
+    if intent.kind in ("mark_paid", "send_draft", "link_receipt"):
+        slug = intent.company if intent.company in ("adspot", "sidadiya") else scope_choice
+        if slug != "adspot":
+            return "Booking payments, publication mail and receipts are AdSpot only. Switch the company to AdSpot."
+        ref_text = intent.booking_ref or text
+        if intent.kind == "mark_paid":
+            from .. import payments
+            return payments.request_mark_paid("adspot", ref_text, intent.amount)["reply"]
+        if intent.kind == "link_receipt":
+            from .. import receipts
+            try:
+                r = receipts.link_latest_upload("adspot", ref_text)
+            except (LookupError, ValueError) as e:
+                return str(e)
+            return (f"Receipt linked to {r['booking_ref']}. A customer mail draft is in Mail for you to review"
+                    + (" (auto-send is ON, it will go after the undo window)." if r["auto"] else ". Say \"send\" or press Send."))
+        from .. import bookings, mailer
+        from ..scope import company_scope
+        with company_scope("adspot") as s:
+            cands, _ = bookings.resolve(s, ref_text)
+            if len(cands) != 1:
+                return "Which booking should I send the draft for? Give the full reference."
+            drafts = s.conn.execute("SELECT id, to_addr, subject FROM mail_outbox WHERE company_id=%s AND booking_ref=%s "
+                                    "AND status='draft' ORDER BY id", (s.company_id, cands[0]["booking_ref"])).fetchall()
+            cid = s.company_id
+        if len(drafts) != 1:
+            return ("There is no unsent draft for that booking." if not drafts else
+                    "There are several drafts for that booking. Send them one by one from the Mail tab.")
+        r = mailer.send_outbox(cid, "adspot", drafts[0]["id"], "owner-chat")
+        return (f"Sent to {drafts[0]['to_addr']}: {drafts[0]['subject']}" if r["status"] == "sent"
+                else f"Not sent: {r.get('reason')}")
     if intent.kind == "money_action":
         return ("That would move money or send mail to a customer. Phase 1 cannot do that. "
                 "Nothing was changed. (The booking/amount confirm card arrives in Phase 2.)")
