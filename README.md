@@ -36,7 +36,7 @@ uv run pytest
 
 ## Deploy on Railway
 1. New project -> add **Postgres** plugin (this is AgentCo's own DB).
-2. Two services from this repo (Dockerfile build): `api` (default start command, healthcheck `/api/health`) and `worker` (`python -m agentco.worker`; it runs jobs, sends due mail and drives the scheduler, so no cron service is needed). Share the env vars from `.env.example`.
+2. Two services from this repo (Dockerfile build): `api` (default start command, healthcheck `/api/health`) and `worker` (`python -m agentco.worker`; it runs jobs, sends due mail and drives the scheduler, so no cron service is needed). Share the env vars: full list with where each value comes from in `docs/env-variables.md`.
 3. Mount a volume at `UPLOAD_DIR` for chat uploads.
 4. **Read-only roles** (run on each *live app's* Postgres, then put the URLs in `ADSPOT_RO_DATABASE_URL` / `SIDADIYA_RO_DATABASE_URL`):
 ```sql
@@ -71,6 +71,7 @@ you upload the publication's receipt (Chat receipt button or Bookings) -> custom
   -> Send (or turn on auto-send receipts) -> booking = customer_receipt_sent
 Bookings > Payouts: a CSV of what each publication is owed. You pay by bank transfer, then press "I paid them".
 ```
+Customer "payment received" mail from AgentCo is OFF by default (AdSpot's own Apps Script mail already covers it; switch it on in Mail > settings). The receipt mail is separate and stays.
 Safety rules, all enforced in code and tests: customer mails go only to the email on the booking; publication mails only to addresses you typed into the publications table; every mail is sent at most once; nothing is ever auto-retried; an email can never trigger an action, add a recipient or mark anything paid; AgentCo never moves money.
 Default mail wording: `docs/mail-templates.md`.
 

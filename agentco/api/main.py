@@ -542,7 +542,7 @@ def payout_paid(slug: str, batch_id: int):
             raise HTTPException(409, str(e))
 
 
-_SETTINGS = {"auto_send_receipts", "receipt_also_reply_on_publication_thread"}
+_SETTINGS = {"auto_send_receipts", "send_payment_confirmation", "receipt_also_reply_on_publication_thread"}
 
 
 class SettingIn(BaseModel):

@@ -27,6 +27,13 @@ def gm():
     gmail.set_client(None)
 
 
+@pytest.fixture(autouse=True)
+def pay_mail_on():
+    """Most tests exercise the customer payment mail, which is OFF by default in production."""
+    with company_scope("adspot") as s:
+        s.set_setting("send_payment_confirmation", "true")
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(auth, "verify_google_token", lambda t: {"email": t, "email_verified": True})
@@ -506,3 +513,19 @@ def test_gmail_parse_and_mime_helpers():
     assert m["from_addr"] == "a@example.com" and m["body"] == "hello" and m["attachments"][0]["name"] == "slip.pdf" and m["thread_id"] == "t9"
     mime = gmail.build_mime(to="a@example.com", subject="S", body="B", attachments=[("r.png", b"123", "image/png")], in_reply_to="<x@y>")
     assert mime["In-Reply-To"] == "<x@y>" and any(p.get_filename() == "r.png" for p in mime.iter_attachments())
+
+
+def test_payment_confirmation_mail_is_off_by_default(client, gm):
+    with company_scope("adspot") as s:
+        s.set_setting("send_payment_confirmation", "false")
+    assert client.get("/api/settings/adspot").json()["send_payment_confirmation"] == "false"
+    r = confirm(client, card(REF))
+    assert "No payment-confirmation mail was sent" in r.json()["note"]
+    assert outbox("customer_payment") == []
+    with company_scope("adspot") as s:                 # everything else still happened
+        assert bookings.get(s, REF)["state"] == "paid"
+        assert s.conn.execute("SELECT COUNT(*) AS n FROM ledger_entries").fetchone()["n"] == 1
+    mailer.send_due()
+    assert gm.sent == []
+    client.put("/api/settings/adspot/send_payment_confirmation", json={"value": "true"})
+    assert client.get("/api/settings/adspot").json()["send_payment_confirmation"] == "true"

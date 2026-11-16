@@ -410,6 +410,7 @@ function Publications() {
             <input placeholder="newspaper desk email" value={edit[p.group_ref] ?? p.email} onChange={(e) => setEdit({ ...edit, [p.group_ref]: e.target.value })} />
             {edit[p.group_ref] !== undefined && <button className="small primary" onClick={() => save(p)}>Save</button>}</div>))}
         {err && <p className="err">{err}</p>}
+        <label className="row"><input type="checkbox" style={{ width: 22, minHeight: 22 }} checked={settings.data?.send_payment_confirmation === "true"} onChange={(e) => toggle("send_payment_confirmation", e.target.checked)} /> Send my own "payment received" mail to customers (off: AdSpot's mail already does it)</label>
         <label className="row"><input type="checkbox" style={{ width: 22, minHeight: 22 }} checked={settings.data?.auto_send_receipts === "true"} onChange={(e) => toggle("auto_send_receipts", e.target.checked)} /> Auto-send publication receipts to customers (after the undo window)</label>
       </>}
     </div>

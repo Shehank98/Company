@@ -76,10 +76,13 @@ def execute_mark_paid(scope: CompanyScope, args: dict, ctx: dict) -> dict:
         notes.append("Could not update AdSpot's booking record; please mark it paid in the admin panel.")
 
     b = bookings.get(scope, ref)
-    desk = _desk_agent(scope)
-    mail_id, created = mailer.queue_customer_payment(scope, b, amount, desk, None)
-    notes.append(f"Payment-confirmation mail to the customer is queued (undo within {mailer.get_settings().undo_window_seconds}s in Mail)."
-                 if created else "A confirmation mail already existed; none added.")
+    mail_id = None
+    if scope.get_setting("send_payment_confirmation", "false") == "true":     # OFF by default: AdSpot's own mail covers it
+        mail_id, created = mailer.queue_customer_payment(scope, b, amount, _desk_agent(scope), None)
+        notes.append(f"Payment-confirmation mail to the customer is queued (undo within {mailer.get_settings().undo_window_seconds}s in Mail)."
+                     if created else "A confirmation mail already existed; none added.")
+    else:
+        notes.append("No payment-confirmation mail was sent by AgentCo (that setting is off; AdSpot's own mail covers it).")
     pub = mailer.queue_publication_drafts(scope, b)
     for d in pub["drafts"]:
         notes.append(f"Draft to {d['group']} is ready in Mail for you to edit and send (id {d['id']}).")
