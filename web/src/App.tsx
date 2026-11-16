@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { api, AuthError, Scope } from "./api";
 import Login from "./Login";
-import { Activity, Approvals, Bookings, Chat, Costs, Departments, Mail, Posts, Tasks } from "./pages";
+import { Activity, Approvals, Bookings, Chat, Costs, Departments, Mail, Posts, Shorts, Tasks } from "./pages";
 
 const TABS = [
   ["chat", "💬", "Chat"], ["approvals", "✅", "Approvals"], ["mail", "✉️", "Mail"],
-  ["bookings", "🧾", "Bookings"], ["posts", "✍️", "Posts"], ["more", "⋯", "More"],
+  ["bookings", "🧾", "Bookings"], ["posts", "🎬", "Content"], ["more", "⋯", "More"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -17,6 +17,16 @@ function More({ scope }: { scope: Scope }) {
     <div className="list">
       <div className="seg">{MORE.map(([k, l]) => <button key={k} className={sub === k ? "on" : ""} onClick={() => setSub(k)}>{l}</button>)}</div>
       <P scope={scope} />
+    </div>
+  );
+}
+
+function Content({ scope }: { scope: Scope }) {
+  const [sub, setSub] = useState<"posts" | "shorts">("shorts");
+  return (
+    <div className="list">
+      <div className="seg"><button className={sub === "posts" ? "on" : ""} onClick={() => setSub("posts")}>Posts</button><button className={sub === "shorts" ? "on" : ""} onClick={() => setSub("shorts")}>YouTube Shorts</button></div>
+      {sub === "posts" ? <Posts scope={scope} /> : <Shorts scope={scope} />}
     </div>
   );
 }
@@ -55,7 +65,7 @@ export default function App() {
   if (authed === null) return <div className="login"><p>Loading…</p></div>;
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
 
-  const Page = { chat: Chat, approvals: Approvals, mail: Mail, bookings: Bookings, posts: Posts, more: More }[tab];
+  const Page = { chat: Chat, approvals: Approvals, mail: Mail, bookings: Bookings, posts: Content, more: More }[tab];
   return (
     <div className="app">
       <header>

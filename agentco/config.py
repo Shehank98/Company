@@ -31,6 +31,19 @@ class Settings(BaseSettings):
     gmail_refresh_token: str = ""
     gmail_label: str = "AgentCo"
     undo_window_seconds: int = 30
+    # YouTube Shorts
+    youtube_client_id: str = ""
+    youtube_client_secret: str = ""
+    youtube_refresh_token_adspot: str = ""      # one token per channel (sign in as that channel's owner)
+    youtube_refresh_token_sidadiya: str = ""
+    youtube_max_uploads_per_day: int = 5        # each upload costs 1600 of the default 10,000 daily quota units
+    youtube_synthetic_disclosure: bool = True   # mark videos as containing AI-generated media
+    veo_model: str = ""                         # Veo model id; empty => clips come from Google Flow by hand
+    veo_price_per_second_usd: float = 0.40      # VERIFY against current pricing
+    gemini_tts_model: str = ""                  # empty => no AI voiceover
+    gemini_tts_voice: str = "Kore"
+    gemini_tts_price_per_1k_chars_usd: float = 0.02   # VERIFY against current pricing
+    max_video_mb: int = 100
     omniroute_enabled: bool = False         # Phase 3; PUBLIC-class tasks only
 
     # Owner auth

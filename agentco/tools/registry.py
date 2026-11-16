@@ -64,12 +64,31 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("send_publication_mail", Tier.HIGH, lambda s, a, c: _send_pub(s, a), frozenset({"adspot"}),
          describe=lambda a: f"Send mail to publication for booking {a.get('booking_ref', '?')}"),
     Tool("save_content_pack", Tier.DRAFT, _save_pack),
+    Tool("save_video_script", Tier.DRAFT, lambda s, a, c: _video().save_script(s, a, c)),
+    # HIGH: only runs from execute_approved (agent-requested) or the owner's explicit Upload button. PRIVATE upload only.
+    Tool("youtube_upload", Tier.HIGH, lambda s, a, c: _yt_upload(s, a),
+         describe=lambda a: f"Upload video project {a.get('project_id', '?')} to YouTube as PRIVATE (you publish it in Studio)"),
     Tool("send_customer_mail", Tier.OWNER_COMMAND, _not_built("later"), frozenset({"adspot"}),
          describe=lambda a: f"Send mail for {a.get('booking_ref', '?')}", needs_booking_and_amount=True),
     # Owner-originated only (never in any department allowlist): created by owner_command() from a chat command.
     Tool("mark_booking_paid", Tier.OWNER_COMMAND, lambda s, a, c: _pay().execute_mark_paid(s, a, c), frozenset({"adspot"}),
          describe=lambda a: f"Mark {a.get('booking_ref', '?')} paid", needs_booking_and_amount=True),
 ]}
+
+
+def _video():
+    from ..youtube import projects     # late import: avoids a cycle
+    return projects
+
+
+def _yt_upload(scope, args):
+    from ..youtube import uploader
+    if "project_id" not in args:
+        raise ToolDenied("no video project is attached to this approval")
+    r = uploader.upload_project(scope.company_id, scope.slug, int(args["project_id"]), "approved")
+    if r["status"] != "uploaded":
+        raise ToolDenied(f"video was not uploaded: {r.get('reason', r['status'])}")
+    return r
 
 
 def _send_pub(scope, args):
@@ -94,6 +113,7 @@ DEPT_TOOLS: dict[str, frozenset[str]] = {
     "insights": frozenset({"sidadiya_report_snapshot", "save_note"}),
     "customer_desk": frozenset({"read_mail", "create_mail_draft", "save_note"}),
     "marketing": frozenset({"save_note", "save_content_pack"}),
+    "video": frozenset({"save_note", "save_video_script", "youtube_upload"}),
     "finance": frozenset({"save_note"}),
     "engineering": frozenset({"save_note"}),
 }

@@ -83,7 +83,15 @@ def chat(body: ChatIn):
     return {"reply": reply}
 
 
-_MAGIC = {".pdf": b"%PDF", ".png": b"\x89PNG", ".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".webp": b"RIFF"}
+_MAGIC = {".pdf": b"%PDF", ".png": b"\x89PNG", ".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".webp": b"RIFF",
+          ".mp4": b"", ".mov": b"", ".webm": b"\x1aE\xdf\xa3"}
+_VIDEO_EXT = (".mp4", ".mov", ".webm")
+
+
+def _magic_ok(ext: str, data: bytes) -> bool:
+    if ext in (".mp4", ".mov"):
+        return data[4:8] == b"ftyp"                      # ISO base media container signature
+    return data.startswith(_MAGIC[ext])
 
 
 def _store_upload(file: UploadFile, subdir: str = "", allowed: tuple[str, ...] = tuple(_MAGIC)) -> tuple[str, str, int]:
@@ -92,10 +100,11 @@ def _store_upload(file: UploadFile, subdir: str = "", allowed: tuple[str, ...] =
     ext = Path(file.filename or "").suffix.lower()
     if ext not in allowed:
         raise HTTPException(415, "Unsupported file type")
-    data = file.file.read(s.max_upload_mb * 1024 * 1024 + 1)
-    if len(data) > s.max_upload_mb * 1024 * 1024:
-        raise HTTPException(413, f"File larger than {s.max_upload_mb} MB")
-    if not data.startswith(_MAGIC[ext]):
+    cap_mb = s.max_video_mb if ext in _VIDEO_EXT else s.max_upload_mb
+    data = file.file.read(cap_mb * 1024 * 1024 + 1)
+    if len(data) > cap_mb * 1024 * 1024:
+        raise HTTPException(413, f"File larger than {cap_mb} MB")
+    if not _magic_ok(ext, data):
         raise HTTPException(415, "File content does not match its type")
     folder = Path(s.upload_dir) / subdir
     folder.mkdir(parents=True, exist_ok=True)
@@ -111,7 +120,7 @@ def chat_upload(file: UploadFile = File(...), scope: str = Form("all"), kind: st
     kind='receipt' = a publication receipt: attach it to a booking (given now, or named in the next chat message)."""
     if kind == "receipt":
         from .. import receipts
-        stored, safe, size = _store_upload(file, "receipts")
+        stored, safe, size = _store_upload(file, "receipts", (".pdf", ".png", ".jpg", ".jpeg", ".webp"))
         post_message(scope, "owner", f"Uploaded publication receipt {safe}",
                      {"stored_as": stored, "name": safe, "size": size, "kind": "receipt"})
         if not booking_ref.strip():
@@ -125,7 +134,7 @@ def chat_upload(file: UploadFile = File(...), scope: str = Form("all"), kind: st
                 reply = str(e)
         post_message(scope, "command", reply)
         return {"stored_as": stored, "reply": reply}
-    stored, safe, size = _store_upload(file)
+    stored, safe, size = _store_upload(file, "", (".pdf", ".png", ".jpg", ".jpeg", ".webp"))   # chat: no video
     data = {"size": size}
     post_message(scope, "owner", f"Uploaded {safe}", {"stored_as": stored, "name": safe, "size": size})
     reply = "Saved. Phase 2 will let me link receipts to a booking; nothing was sent or changed."
@@ -388,7 +397,7 @@ def booking_pub_drafts(slug: str, ref: str):
 
 @app.post("/api/bookings/{slug}/{ref}/receipt", dependencies=[*api, Depends(limit("upload", 10, 60))])
 def booking_receipt(slug: str, ref: str, file: UploadFile = File(...)):
-    stored, safe, size = _store_upload(file, "receipts")
+    stored, safe, size = _store_upload(file, "receipts", (".pdf", ".png", ".jpg", ".jpeg", ".webp"))
     try:
         return receipts.attach_receipt(slug, ref, stored)
     except LookupError as e:
@@ -564,6 +573,153 @@ def settings_put(slug: str, key: str, body: SettingIn):
     with scope_by_id(co["id"], co["slug"]) as s:
         s.set_setting(key, body.value)
     return {"ok": True}
+
+
+# ---------------- YouTube Shorts ----------------
+from ..youtube import client as yt_client, projects as vp, tts as yt_tts, uploader as yt_uploader, veo as yt_veo  # noqa: E402
+
+
+def _video_op(fn, *, not_found="No such video project"):
+    try:
+        return fn()
+    except LookupError as e:
+        raise HTTPException(404, str(e) or not_found)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/video", dependencies=api)
+def video_list(scope: str = "all"):
+    st = get_settings()
+    return {"projects": _each(scope, lambda s: vp.list_projects(s)),
+            "capabilities": {"tts": yt_tts.available(), "veo": yt_veo.available(), "max_uploads_per_day": st.youtube_max_uploads_per_day,
+                             "youtube": {c: yt_client.configured(c) for c in ("adspot", "sidadiya")}}}
+
+
+class VideoIn(BaseModel):
+    company: str = Field(pattern="^(adspot|sidadiya)$")
+    topic: str = Field(min_length=3, max_length=300)
+    voice_mode: str = Field(default="tts", pattern="^(tts|none)$")
+    clip_mode: str = Field(default="flow_manual", pattern="^(flow_manual|veo_api)$")
+
+
+@app.post("/api/video", dependencies=[*api, Depends(limit("video", 10, 60))])
+def video_create(body: VideoIn):
+    try:
+        return {"id": vp.request_project(body.company, body.topic, body.voice_mode, body.clip_mode)}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except LookupError as e:
+        raise HTTPException(409, str(e))
+
+
+class ShotIn(BaseModel):
+    spoken: str = Field(min_length=3, max_length=300)
+    on_screen: str = Field(default="", max_length=90)
+    visual_prompt: str = Field(min_length=5, max_length=600)
+
+
+class MetaIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=4800)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+def _vscope(slug: str, fn):
+    (co,) = _companies(slug)
+    with scope_by_id(co["id"], co["slug"]) as s:
+        return _video_op(lambda: fn(s))
+
+
+@app.put("/api/video/{slug}/{pid}/shots/{beat}", dependencies=api)
+def video_shot(slug: str, pid: int, beat: int, body: ShotIn):
+    _vscope(slug, lambda s: vp.update_shot(s, pid, beat, body.spoken, body.on_screen, body.visual_prompt))
+    return {"ok": True}
+
+
+@app.put("/api/video/{slug}/{pid}/meta", dependencies=api)
+def video_meta(slug: str, pid: int, body: MetaIn):
+    _vscope(slug, lambda s: vp.update_meta(s, pid, body.title, body.description, body.tags))
+    return {"ok": True}
+
+
+@app.post("/api/video/{slug}/{pid}/approve-script", dependencies=api)
+def video_approve(slug: str, pid: int):
+    _companies(slug)
+    return _video_op(lambda: vp.approve_script(slug, pid))
+
+
+@app.post("/api/video/{slug}/{pid}/shots/{beat}/asset", dependencies=[*api, Depends(limit("upload", 20, 60))])
+def video_asset(slug: str, pid: int, beat: int, file: UploadFile = File(...)):
+    """Attach the clip/image you made in Google Flow (or anywhere) to a beat."""
+    (co,) = _companies(slug)
+    ext = Path(file.filename or "").suffix.lower()
+    stored, _, _ = _store_upload(file, f"video/{int(pid)}", (".mp4", ".mov", ".webm", ".png", ".jpg", ".jpeg", ".webp"))
+    from ..youtube import render as yt_render
+    path = vp.media_dir(pid) / stored
+    kind = "video" if ext in _VIDEO_EXT else "image"
+    try:
+        yt_render.check_asset(path, kind)                                  # decode check before it is accepted
+    except yt_render.RenderError as e:
+        path.unlink(missing_ok=True)
+        raise HTTPException(422, str(e))
+    with scope_by_id(co["id"], co["slug"]) as s:
+        _video_op(lambda: vp.attach_asset(s, pid, beat, stored, kind))
+    return {"ok": True}
+
+
+@app.post("/api/video/{slug}/{pid}/retry-assets", dependencies=[*api, Depends(limit("video", 10, 60))])
+def video_retry(slug: str, pid: int):
+    """Resume voiceover/clip generation after raising the budget or after a failed clip."""
+    _companies(slug)
+    return _video_op(lambda: vp.retry_assets(slug, pid))
+
+
+class RenderIn(BaseModel):
+    allow_placeholders: bool = False
+
+
+@app.post("/api/video/{slug}/{pid}/render", dependencies=[*api, Depends(limit("render", 10, 60))])
+def video_render(slug: str, pid: int, body: RenderIn):
+    _companies(slug)
+    _video_op(lambda: vp.request_render(slug, pid, body.allow_placeholders))
+    return {"ok": True}
+
+
+@app.post("/api/video/{slug}/{pid}/reject", dependencies=api)
+def video_reject(slug: str, pid: int):
+    _vscope(slug, lambda s: vp.reject(s, pid))
+    return {"ok": True}
+
+
+@app.get("/api/video/{slug}/{pid}/file", dependencies=api)
+def video_file(slug: str, pid: int):
+    return _video_media(slug, pid, "final.mp4", "video/mp4")
+
+
+@app.get("/api/video/{slug}/{pid}/preview.jpg", dependencies=api)
+def video_preview(slug: str, pid: int):
+    return _video_media(slug, pid, "preview.jpg", "image/jpeg")
+
+
+def _video_media(slug: str, pid: int, name: str, mime: str):
+    (co,) = _companies(slug)
+    with scope_by_id(co["id"], co["slug"]) as s:
+        p = vp.get(s, pid)
+    f = vp.media_dir(pid) / "render" / name                                   # fixed names: nothing user-supplied in the path
+    if not p or not p["render_file"] or not f.is_file():
+        raise HTTPException(404, "Not rendered yet")
+    return FileResponse(f, media_type=mime)
+
+
+@app.post("/api/video/{slug}/{pid}/upload", dependencies=[*api, Depends(limit("yt_upload", 6, 60))])
+def video_upload(slug: str, pid: int):
+    """The owner's explicit Upload button. Always PRIVATE; you publish it in YouTube Studio."""
+    (co,) = _companies(slug)
+    r = yt_uploader.upload_project(co["id"], co["slug"], pid, "owner-button")
+    if r["status"] != "uploaded":
+        raise HTTPException(409, r.get("reason", r["status"]))
+    return r
 
 
 # ---------------- PWA static files ----------------

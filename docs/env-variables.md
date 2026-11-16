@@ -24,6 +24,24 @@ Railway sets `PORT` itself. `DATABASE_URL` comes from the Postgres plugin (refer
 
 Without these three, no mail is read or sent; bookings still sync and drafts still appear.
 
+## Required for YouTube Shorts uploads
+| Variable | Value |
+|---|---|
+| `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | OAuth client with the YouTube Data API v3 enabled (docs/youtube.md) |
+| `YOUTUBE_REFRESH_TOKEN_ADSPOT` | refresh token for the AdSpot channel (scope `youtube.upload`) |
+| `YOUTUBE_REFRESH_TOKEN_SIDADIYA` | refresh token for the Sidadiya channel |
+
+Without them you can still make and download Shorts; the Upload button is disabled with a message.
+
+## Optional: AI voice and automatic clips
+| Variable | Default | Notes |
+|---|---|---|
+| `GEMINI_TTS_MODEL` | empty | enables "Voice: AI (Gemini)". Also `GEMINI_TTS_VOICE` (default `Kore`) and `GEMINI_TTS_PRICE_PER_1K_CHARS_USD` (0.02, check it) |
+| `VEO_MODEL` | empty | enables "Clips: Veo (auto, paid)". Also `VEO_PRICE_PER_SECOND_USD` (0.40, check it). About $3 per 8 s clip: raise the Video Producer budget |
+| `YOUTUBE_MAX_UPLOADS_PER_DAY` | 5 | API quota guard |
+| `YOUTUBE_SYNTHETIC_DISCLOSURE` | true | mark uploads as containing AI-generated media |
+| `MAX_VIDEO_MB` | 100 | largest clip you can upload |
+
 ## Recommended
 | Variable | Default | Notes |
 |---|---|---|
@@ -54,4 +72,4 @@ Without these three, no mail is read or sent; bookings still sync and drafts sti
 * Custom domain later: add it in Railway, then add it to the Google OAuth authorised origins.
 
 ## Do NOT add
-No bank, HelaPay, OnePay, PayHere, Meta, Facebook, Firebase or Postiz credentials. AgentCo never needs them.
+No bank, HelaPay, OnePay, PayHere, Meta, Facebook, Firebase or Postiz credentials, and no Google Flow login or password (Flow has no API; you upload its clips by hand). AgentCo never needs them.

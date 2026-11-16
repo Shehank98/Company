@@ -47,7 +47,7 @@ def run_job(job: dict) -> str:
         if agent is None:
             return "failed:no agent"
         # the 2-minute mailbox poll is audited as a run but is not a "task" (keeps the Tasks board readable)
-        task_id = None if job["kind"] == "mail_poll" else scope.create_task(f"{job['kind']} ({agent['name']})", agent["id"], job["payload"])
+        task_id = None if job["kind"] in ("mail_poll", "video_clip") else scope.create_task(f"{job['kind']} ({agent['name']})", agent["id"], job["payload"])
         run_id = scope.start_run(agent["id"], task_id)
 
         def set_task(status: str) -> None:
@@ -67,6 +67,9 @@ def run_job(job: dict) -> str:
                 from .. import mail_intake
                 message = None
                 mail_intake.run(scope, agent, run_id)
+            elif agent["role"] == "video" and job["kind"].startswith("video_"):
+                from ..youtube import jobs as video_jobs
+                message = video_jobs.run(scope, agent, run_id, job, db_company_name(job["company_id"]))
             elif agent["role"] == "marketing" and job["kind"] == "content_pack":
                 from .. import content
                 co_name = db_company_name(job["company_id"])
@@ -76,6 +79,9 @@ def run_job(job: dict) -> str:
             scope.finish_run(run_id, "done")
             set_task("done")
         except budget.BudgetExceeded as e:
+            if job["kind"].startswith("video_"):
+                from ..youtube import jobs as video_jobs
+                video_jobs.budget_stopped(scope, job)
             scope.finish_run(run_id, "budget_stopped", str(e))
             set_task("blocked")
             outcome, message = "budget_stopped", f"{agent['name']} stopped: monthly budget reached ({e})."
@@ -88,6 +94,6 @@ def run_job(job: dict) -> str:
     if message:
         post_message(co["slug"], "system", message)
         if outcome == "done":
-            send_push(f"{co['slug'].title()}: draft ready" if job["kind"] == "content_pack"
-                      else f"{co['slug'].title()} report ready", message[:140])
+            titles = {"content_pack": "draft ready", "video_script": "Short script ready", "video_render": "Short ready to review"}
+            send_push(f"{co['slug'].title()}: {titles.get(job['kind'], 'report ready')}", message[:140])
     return outcome

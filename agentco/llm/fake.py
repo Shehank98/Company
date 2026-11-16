@@ -20,6 +20,20 @@ def set_handler(h: Handler | None) -> None:
 
 def _default(system: str, prompt: str) -> str:
     low = prompt.lower()
+    if "hook writer" in system.lower():
+        t = re.search(r"topic: (.+)", prompt).group(1)
+        ids = re.findall(r"^- ([a-z0-9-]+):", system, re.M)[:5] or ["the-statistic"] * 5
+        lines = [f"97% of people get {t} wrong. Here is the 20 second fix.", f"Stop wasting days on {t}.",
+                 f"Why does {t} take so long?", f"Nobody tells you this about {t}.", f"{t}, but in minutes not days."]
+        return json.dumps({"hooks": [{"formula": i, "line": l} for i, l in zip(ids, lines)]})
+    if "script writer" in system.lower():
+        t = re.search(r"topic: (.+)", prompt).group(1)
+        hook = re.search(r"hook line: (.+)", prompt).group(1)
+        return json.dumps({"title": f"{t[:60]} in 45 seconds", "description": "A quick explainer.\nSee adspotmedia.lk", "tags": ["srilanka", "ads"],
+                           "beats": [{"spoken": hook, "on_screen": "THE PROBLEM", "visual_prompt": "Vertical 9:16 flat illustration of a busy desk, slow push-in, no text."},
+                                     {"spoken": "Most people waste time because the steps are scattered.", "on_screen": "SCATTERED STEPS", "visual_prompt": "Vertical 9:16 flat illustration of papers flying, no text."},
+                                     {"spoken": "Do it all in one place instead.", "on_screen": "ONE PLACE", "visual_prompt": "Vertical 9:16 flat illustration of one clean screen, no text."},
+                                     {"spoken": "Try it today.", "on_screen": "TRY IT", "visual_prompt": "Vertical 9:16 flat illustration of a thumbs up, no text."}]})
     if "mail triage" in system.lower():
         b = prompt.lower()
         ref = re.search(r"\b(BOOK-\d{8}-\d{3}|ADM-\d{4}-\d{4})\b", prompt, re.I)
@@ -61,6 +75,8 @@ def _default(system: str, prompt: str) -> str:
         if "payout" in low:
             return json.dumps({"kind": "money_action", "company": co})
         tm = re.search(r"\b(?:about|on)\s+(.+)$", prompt, re.I)
+        if re.search(r"\b(short|youtube)\b", low) and "paid" not in low:
+            return json.dumps({"kind": "create_short", "company": co, "topic": tm.group(1).strip() if tm else None})
         if ("post" in low or "ad " in low or low.startswith("ad")) and "paid" not in low and "approval" not in low:
             kind = "create_ad" if re.search(r"\bad\b", low) and "post" not in low else "create_post"
             return json.dumps({"kind": kind, "company": "adspot" if "adspot" in low else "sidadiya" if "sidadiya" in low else None,

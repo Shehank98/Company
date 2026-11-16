@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 import psycopg
 import uvicorn
 from fake_gmail import FakeGmail
+from fake_youtube import FakeYouTube
 
 from agentco.connectors import gmail
 
@@ -32,6 +33,8 @@ db.migrate(); seed.seed()
 _g = FakeGmail()
 _g.add_mail(id="d1", frm="a@example.com", subject="Question about BOOK-20260101-001", body="How much to book another ad next week?")
 gmail.set_client(_g)
+from agentco.youtube import client as _yt
+_yt.set_client("adspot", FakeYouTube())
 scheduler.tick()
 while worker.work_once():
     pass

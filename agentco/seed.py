@@ -12,6 +12,7 @@ AGENTS = {
         ("marketing", "Marketing", "marketing", "active", None),               # manual-publish packs
         ("finance", "Finance", "finance", "paused", None),                     # Phase 2
         ("engineering", "Engineering", "engineering", "paused", None),         # Phase 4
+        ("video", "Video Producer", "video", "active", None),                  # YouTube Shorts
     ],
     "sidadiya": [
         ("command", "Command", "command", "active", None),
@@ -19,6 +20,7 @@ AGENTS = {
         ("operations", "Sidadiya Ops", "operations", "paused", None),          # Phase 3 (slip checker)
         ("marketing", "Marketing", "marketing", "active", None),
         ("engineering", "Engineering", "engineering", "paused", None),
+        ("video", "Video Producer", "video", "active", None),                  # YouTube Shorts
     ],
 }
 # Only these facts (plus the post topic) feed marketing copy. REVIEW AND EDIT in the Posts tab.
@@ -31,6 +33,7 @@ FACTS = {
         "payment": "Pay by bank transfer or HelaPay QR. You get a confirmation email with a PDF quotation.",
         "audience": "Businesses and individuals in Sri Lanka, and Sri Lankans living overseas.",
         "tone": "Friendly, clear, practical. English first.",
+        "shorts_style": "Faceless vertical explainer, calm friendly voice, clean flat visuals, no real people, no text inside generated images.",
     },
     "sidadiya": {
         "about": "Sidadiya helps small Sri Lankan sellers build their own online shop.",
@@ -40,6 +43,7 @@ FACTS = {
         "payments": "Shops can accept card payments, bank transfer or cash on delivery.",
         "tracking": "Buyers get order tracking links by email.",
         "tone": "Warm, encouraging, simple English. Aimed at small sellers.",
+        "shorts_style": "Faceless vertical explainer, warm encouraging voice, clean flat visuals of a small online shop, no real people, no text inside generated images.",
     },
 }
 COMPANIES = {"adspot": "AdSpot Media", "sidadiya": "Sidadiya"}

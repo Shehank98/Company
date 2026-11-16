@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import db
 from .images import provider as images
+from .agents import budget
 from .llm import router
 from .models import DataClass
 from .orchestrator import queue
@@ -94,6 +95,7 @@ def build(scope: CompanyScope, agent: dict, run_id: int, pack_id: int, company_n
     facts = _facts_block(scope)
     prompt = f"kind: {pack['kind']}\ntopic: {pack['topic']}\nfacts:\n{facts}"
 
+    budget.ensure(scope, agent)
     res = router.complete(scope=scope, agent_id=agent["id"], run_id=run_id, task="content_copy",
                           data_class=DataClass.PUBLIC, system=COPY_SYSTEM.format(company=company_name),
                           prompt=prompt, tier=agent["model_tier"], json_mode=True)
@@ -103,6 +105,7 @@ def build(scope: CompanyScope, agent: dict, run_id: int, pack_id: int, company_n
         raise ValueError("the model did not return a usable draft") from e
 
     issues = problems(json.dumps(draft.model_dump()))
+    budget.ensure(scope, agent)
     chk = router.complete(scope=scope, agent_id=agent["id"], run_id=run_id, task="claims_check",
                           data_class=DataClass.PUBLIC, system=CHECK_SYSTEM,
                           prompt=f"facts:\n{facts}\n\ndraft:\n{json.dumps(draft.model_dump(), indent=1)}",

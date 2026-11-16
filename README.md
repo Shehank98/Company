@@ -75,6 +75,9 @@ Customer "payment received" mail from AgentCo is OFF by default (AdSpot's own Ap
 Safety rules, all enforced in code and tests: customer mails go only to the email on the booking; publication mails only to addresses you typed into the publications table; every mail is sent at most once; nothing is ever auto-retried; an email can never trigger an action, add a recipient or mark anything paid; AgentCo never moves money.
 Default mail wording: `docs/mail-templates.md`.
 
+## YouTube Shorts
+Content > YouTube Shorts: the Video Producer agent writes a script (hooks scored by the vendored youtube-agent-skill), you review it, add pictures from Google Flow (or let Veo make them), AgentCo renders a 1080x1920 Short with captions (and optional AI voice), you watch it, and Upload sends it to YouTube as PRIVATE. You publish in YouTube Studio. Details, setup and limits: `docs/youtube.md`.
+
 ## Posts and ads (manual publish, no Facebook connection)
 The **Posts** tab (or chat: "make a post for AdSpot about booking classified ads online") makes the Marketing agent write a ready-to-post package: copy for Facebook, Instagram, X and LinkedIn, hashtags, an image brief with an exact prompt, and recommended sizes. Choose **Ad** to also get a setup sheet (objective, audience, placements, headline, text, call to action) to type into Ads Manager yourself.
 * Copy buttons for every block. Image: either make it in Google Flow from the prompt and upload it, or pick "Gemini (auto)" (needs `GEMINI_IMAGE_MODEL`).
@@ -85,6 +88,7 @@ The **Posts** tab (or chat: "make a post for AdSpot about booking classified ads
 ## Phases
 1. Core + chat + approvals + daily reports (done).
 1b. Manual-publish Posts and ad sheets (done). Postiz and Meta API are dropped.
+1c. YouTube Shorts: script, edit, render, private upload (done).
 2. Gmail, Customer Desk, payment flow, publication draft, receipt flow, booking state machine, payout batch (prepare only). (done)
 3. Sidadiya slip checker, optional OmniRoute for PUBLIC copy with cost comparison.
 4. Engineering agent (PRs), weekly Insights report.

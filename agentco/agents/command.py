@@ -13,12 +13,12 @@ from . import budget
 
 INTENT_SYSTEM = (
     "You convert an owner's chat message into an intent. Return JSON only with keys: "
-    "kind (status|show_report|list_approvals|pause_agent|resume_agent|create_post|create_ad|mark_paid|send_draft|link_receipt|money_action|unknown), "
+    "kind (status|show_report|list_approvals|pause_agent|resume_agent|create_post|create_ad|create_short|mark_paid|send_draft|link_receipt|money_action|unknown), "
     "company (adspot|sidadiya|all|null), agent (agent name or null), booking_ref (e.g. BOOK-20260101-123 "
     "or ADM-2026-1234, or null), amount (number or null), topic (what the post/ad is about, or null). "
     "Use mark_paid for 'payment received for <ref>' (put the stated amount in amount); send_draft when the owner says "
     "to send a publication mail draft; link_receipt when the owner names the booking for a receipt they uploaded. "
-    "Use create_post to draft a social post and create_ad to draft an Ads Manager setup sheet. "
+    "Use create_short to make a YouTube Short video; create_post to draft a social post and create_ad to draft an Ads Manager setup sheet. "
     "Use money_action for payouts or any other money request. Never invent values."
 )
 
@@ -90,6 +90,19 @@ def handle(text: str, scope_choice: str) -> str:
     if intent.kind == "money_action":
         return ("That would move money or send mail to a customer. Phase 1 cannot do that. "
                 "Nothing was changed. (The booking/amount confirm card arrives in Phase 2.)")
+    if intent.kind == "create_short":
+        from ..youtube import projects as vp, tts
+        slug = intent.company if intent.company in ("adspot", "sidadiya") else scope_choice
+        if slug not in ("adspot", "sidadiya"):
+            return "Which company is this Short for, AdSpot or Sidadiya?"
+        if not intent.topic:
+            return "What should the Short be about? e.g. \"make a short for AdSpot about booking classified ads online\"."
+        try:
+            pid = vp.request_project(slug, intent.topic, "tts" if tts.available() else "none")
+        except (ValueError, LookupError) as e:
+            return f"I can't make that Short: {e}"
+        return (f"Writing the script for Short #{pid} ({slug.title()}). Review it in Content > YouTube Shorts in a minute. "
+                "Nothing is uploaded until you press Upload, and it goes up as private.")
     if intent.kind in ("create_post", "create_ad"):
         from .. import content
         if intent.company not in ("adspot", "sidadiya") and scope_choice not in ("adspot", "sidadiya"):

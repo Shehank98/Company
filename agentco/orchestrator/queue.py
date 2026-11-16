@@ -5,11 +5,12 @@ from psycopg.types.json import Jsonb
 
 
 def enqueue(conn, *, company_id: int, agent_id: int | None, kind: str, payload: dict | None = None,
-            dedupe_key: str | None = None) -> int | None:
+            dedupe_key: str | None = None, delay_seconds: int = 0) -> int | None:
     row = conn.execute(
-        "INSERT INTO jobs (company_id, agent_id, kind, payload, dedupe_key) VALUES (%s,%s,%s,%s,%s) "
+        "INSERT INTO jobs (company_id, agent_id, kind, payload, dedupe_key, run_at) "
+        "VALUES (%s,%s,%s,%s,%s, now() + make_interval(secs => %s)) "
         "ON CONFLICT (dedupe_key) DO NOTHING RETURNING id",
-        (company_id, agent_id, kind, Jsonb(payload or {}), dedupe_key)).fetchone()
+        (company_id, agent_id, kind, Jsonb(payload or {}), dedupe_key, delay_seconds)).fetchone()
     return row["id"] if row else None
 
 

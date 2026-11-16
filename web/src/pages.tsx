@@ -445,3 +445,123 @@ export function Mail({ scope }: { scope: Scope }) {
     </div>
   );
 }
+
+// ---------------- YouTube Shorts ----------------
+const VSTATUS: Record<string, string> = { drafting_script: "writing script", script_review: "review script", assets: "add pictures", rendering: "rendering", review: "watch & upload", uploaded: "on YouTube (private)", rejected: "rejected", failed: "failed" };
+
+function ShortCard({ p, caps, reload }: { p: any; caps: any; reload: () => void }) {
+  const base = `/api/video/${p.company}/${p.id}`;
+  const [msg, setMsg] = useState("");
+  const [shots, setShots] = useState<Record<number, any>>({});
+  // the form follows the project (title arrives after the script is written) until the owner edits it
+  const [metaEdit, setMetaEdit] = useState<{ title: string; description: string; tags: string } | null>(null);
+  const meta: { title: string; description: string; tags: string } = metaEdit ?? { title: p.title ?? "", description: p.description ?? "", tags: (p.tags ?? []).join(", ") };
+  const setMeta = (m: { title: string; description: string; tags: string }) => setMetaEdit(m);
+  useEffect(() => { setMsg(""); }, [p.status]);
+  const [ph, setPh] = useState(false);
+  const call = async (path: string, body?: unknown, ok?: string) => { setMsg(""); try { await api(`${base}${path}`, { method: "POST", body: body ?? {} }); if (ok) setMsg(ok); reload(); } catch (e: any) { setMsg(e.message); } };
+  const saveShot = async (s: any) => { const v = { ...s, ...shots[s.beat_no] }; try { await api(`${base}/shots/${s.beat_no}`, { method: "PUT", body: { spoken: v.spoken, on_screen: v.on_screen, visual_prompt: v.visual_prompt } }); setShots((x) => { const { [s.beat_no]: _, ...r } = x; return r; }); reload(); } catch (e: any) { setMsg(e.message); } };
+  const saveMeta = async () => { try { await api(`${base}/meta`, { method: "PUT", body: { title: meta.title, description: meta.description, tags: meta.tags.split(",").map((t) => t.trim()).filter(Boolean) } }); setMetaEdit(null); setMsg("Saved."); reload(); } catch (e: any) { setMsg(e.message); } };
+  const upAsset = async (beat: number, f?: File) => { if (!f) return; const form = new FormData(); form.append("file", f); setMsg("Checking the file…"); try { await api(`${base}/shots/${beat}/asset`, { form }); setMsg(""); reload(); } catch (e: any) { setMsg(e.message); } };
+  const words = (p.shots ?? []).reduce((n: number, s: any) => n + (shots[s.beat_no]?.spoken ?? s.spoken).split(/\s+/).filter(Boolean).length, 0);
+  const issues: string[] = p.claims_check?.issues ?? [];
+  const stuck = (p.shots ?? []).some((s: any) => s.error || s.status === "failed");
+  const active = !["rejected", "uploaded"].includes(p.status);
+  return (
+    <div className="card">
+      <div className="row"><span className="badge">{p.company}</span><span className={`badge ${p.status === "failed" ? "failed" : p.status === "uploaded" ? "done" : "warn"}`}>{VSTATUS[p.status] ?? p.status}</span><small>#{p.id} · {p.voice_mode === "tts" ? "AI voice" : "no voice"} · {p.clip_mode === "veo_api" ? "Veo clips" : "Flow clips"}</small></div>
+      <b>{p.topic}</b>
+      {p.error && <p className="err">{p.error}</p>}
+      {p.status === "drafting_script" && <small>Writing hooks and a script… about a minute.</small>}
+
+      {p.status === "script_review" && <>
+        {issues.length > 0 && <div className="confirm"><b>Check before you go on:</b><ul>{issues.map((i, k) => <li key={k}>{i}</li>)}</ul></div>}
+        {p.hook_options?.[0]?.band === "WEAK" && <div className="confirm"><b>The best hook only scored {p.hook_options[0].score} (WEAK).</b> The first 3 seconds decide whether people stay. Rewrite beat 1 below, or reject this and write a new one.</div>}
+        <div className="block"><b>Hooks (scored by the skill's hook tool)</b>
+          {(p.hook_options ?? []).map((h: any, k: number) => (
+            <div key={k} className="kv"><div className="row"><span className={`badge ${h.band === "STRONG" ? "done" : h.band === "WEAK" ? "failed" : "warn"}`}>{h.score} {h.band}</span>{k === 0 && <span className="badge done">used</span>}<small>{h.detected_formula}</small></div><div className="text">{h.line}</div></div>))}
+        </div>
+        {(p.shots ?? []).map((s: any) => { const v = { ...s, ...shots[s.beat_no] }; const set = (k: string, val: string) => setShots({ ...shots, [s.beat_no]: { ...shots[s.beat_no], [k]: val } });
+          return (<div className="block" key={s.beat_no}><b>Beat {s.beat_no}</b>
+            <small>Voice says</small><textarea rows={2} value={v.spoken} onChange={(e) => set("spoken", e.target.value)} />
+            <small>On screen (different words)</small><input value={v.on_screen} onChange={(e) => set("on_screen", e.target.value)} />
+            <small>Picture prompt for Google Flow / Veo</small><textarea rows={3} value={v.visual_prompt} onChange={(e) => set("visual_prompt", e.target.value)} />
+            {shots[s.beat_no] && <button className="small primary" onClick={() => saveShot(s)}>Save beat</button>}</div>); })}
+        <small>{words} spoken words (keep under ~125 so it stays under a minute)</small>
+        <div className="block"><b>YouTube title, description, tags</b>
+          <input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
+          <textarea rows={3} value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} />
+          <input placeholder="tags, comma separated" value={meta.tags} onChange={(e) => setMeta({ ...meta, tags: e.target.value })} />
+          <button className="small" onClick={saveMeta}>Save details</button></div>
+        <div className="row"><button className="primary" onClick={() => call("/approve-script", {}, "Script approved.")}>Approve script</button></div>
+      </>}
+
+      {(p.status === "assets" || p.status === "rendering" || p.status === "review") && p.status !== "review" && (p.shots ?? []).map((s: any) => (
+        <div className="block" key={s.beat_no}>
+          <div className="row"><b>Beat {s.beat_no}</b><span className={`badge ${s.status === "ready" ? "done" : s.status === "failed" ? "failed" : "warn"}`}>{s.status === "ready" ? `${s.asset_kind} ready` : s.status}</span>{p.voice_mode === "tts" && <span className={`badge ${s.voice_file ? "done" : "warn"}`}>{s.voice_file ? "voice ✓" : "voice…"}</span>}</div>
+          <div className="text">{s.spoken}</div>
+          {s.status !== "ready" && p.clip_mode === "flow_manual" && <div className="row"><div className="text grow"><small>Flow prompt:</small> {s.visual_prompt}</div><CopyBtn text={s.visual_prompt} /></div>}
+          {s.error && <small className="err">{s.error}</small>}
+          {p.status === "assets" && <label className="btnlink">{s.asset_file ? "Replace picture" : "Upload clip or image"}<input type="file" hidden accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp" onChange={(e) => upAsset(s.beat_no, e.target.files?.[0])} /></label>}
+        </div>))}
+      {p.status === "assets" && <>
+        <label className="row"><input type="checkbox" style={{ width: 22, minHeight: 22 }} checked={ph} onChange={(e) => setPh(e.target.checked)} /> Use plain placeholder cards for beats with no picture</label>
+        <div className="row"><button className="primary" onClick={() => call("/render", { allow_placeholders: ph }, "Rendering started.")}>Render video</button>{stuck && <button onClick={() => call("/retry-assets", {}, "Retrying.")}>Retry voice / clips</button>}</div></>}
+      {p.status === "rendering" && <small>Rendering with ffmpeg… under a minute.</small>}
+
+      {p.status === "review" && <>
+        <video className="pic" controls playsInline preload="metadata" poster={`${base}/preview.jpg?v=${p.updated_at}`} src={`${base}/file?v=${p.updated_at}`} style={{ maxHeight: 520 }} />
+        <small>{Number(p.duration_s).toFixed(0)} seconds · 1080×1920</small>
+        <div className="block"><b>YouTube title, description, tags</b>
+          <input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
+          <textarea rows={3} value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} />
+          <input placeholder="tags, comma separated" value={meta.tags} onChange={(e) => setMeta({ ...meta, tags: e.target.value })} />
+          <button className="small" onClick={saveMeta}>Save details</button></div>
+        <small>Want a different picture? Go back and replace it, then render again.</small>
+        <div className="row">
+          <button className="primary" disabled={!caps?.youtube?.[p.company]} onClick={() => confirm("Upload to YouTube as PRIVATE? You will publish it yourself in YouTube Studio.") && call("/upload", {}, "Uploaded as private.")}>Upload to YouTube (private)</button>
+        </div>
+        {!caps?.youtube?.[p.company] && <small className="err">YouTube is not connected for this company yet (see docs/youtube.md). You can still download the video below.</small>}
+        <a className="btnlink" href={`${base}/file`} download={`short-${p.id}.mp4`}>Download video</a>
+      </>}
+
+      {p.status === "uploaded" && p.upload && <div className="confirm"><b>On YouTube as PRIVATE</b><br /><a href={p.upload.url} target="_blank" rel="noreferrer" style={{ color: "var(--acc)" }}>{p.upload.url}</a><br /><small>Open YouTube Studio &gt; Content and set it to Public when you are happy. AgentCo never publishes for you.</small></div>}
+      {msg && <p className={/saved|approved|started|retrying|uploaded/i.test(msg) ? "hint" : "err"}>{msg}</p>}
+      {active && <div className="row"><button className="danger" onClick={() => confirm("Throw this video away?") && call("/reject")}>Reject</button></div>}
+    </div>
+  );
+}
+
+export function Shorts({ scope }: { scope: Scope }) {
+  const { data, err, reload } = useLoad<any>(`/api/video?scope=${scope}`, [scope], 4000);
+  const caps = data?.capabilities;
+  const [company, setCompany] = useState<string>(scope === "all" ? "adspot" : scope);
+  const [topic, setTopic] = useState("");
+  const [voice, setVoice] = useState("tts");
+  const [clips, setClips] = useState("flow_manual");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { if (scope !== "all") setCompany(scope); }, [scope]);
+  useEffect(() => { if (caps && !caps.tts && voice === "tts") setVoice("none"); }, [caps]);
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setMsg("");
+    try { await api("/api/video", { body: { company, topic, voice_mode: voice, clip_mode: clips } }); setTopic(""); reload(); } catch (e: any) { setMsg(e.message); }
+  }
+  return (
+    <div className="list">
+      <form className="card" onSubmit={create}>
+        <b>New YouTube Short</b>
+        <div className="row">
+          {scope === "all" && <select value={company} onChange={(e) => setCompany(e.target.value)}><option value="adspot">AdSpot</option><option value="sidadiya">Sidadiya</option></select>}
+          <select value={voice} onChange={(e) => setVoice(e.target.value)}><option value="tts" disabled={!caps?.tts}>Voice: AI (Gemini){caps?.tts ? "" : " - not set up"}</option><option value="none">Voice: none (captions only)</option></select>
+          <select value={clips} onChange={(e) => setClips(e.target.value)}><option value="flow_manual">Clips: Google Flow (I upload)</option><option value="veo_api" disabled={!caps?.veo}>Clips: Veo (auto, paid){caps?.veo ? "" : " - not set up"}</option></select>
+        </div>
+        <input placeholder="What is the Short about? e.g. booking a newspaper ad online" value={topic} onChange={(e) => setTopic(e.target.value)} />
+        <button className="primary" disabled={topic.trim().length < 3}>Write the script</button>
+        {msg && <p className="err">{msg}</p>}
+        <small>You review the script, add the pictures, watch the video, and upload as private. You publish it in YouTube Studio.</small>
+      </form>
+      {err && <p className="err">{err}</p>}
+      {data?.projects.map((p: any) => <ShortCard key={`${p.company}-${p.id}`} p={p} caps={caps} reload={reload} />)}
+    </div>
+  );
+}
